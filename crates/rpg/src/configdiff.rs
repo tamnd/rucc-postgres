@@ -3,9 +3,15 @@
 //! Postgres decides much of what it compiles at configure time, by asking the compiler. A compiler
 //! that answers a probe differently from the reference gets a different Postgres, and every test
 //! result after that compares two different programs. This compares the two answers: the defines in
-//! `pg_config.h`, and the probe results that meson's log or configure's output printed.
+//! `pg_config.h`, the variables of `src/Makefile.global`, and the probe results that meson's log or
+//! configure's output printed.
+//!
+//! Some differences are expected and change nothing that gets compiled, such as the compiler's
+//! version string. `config-divergences.toml` lists those, each with the reason it is harmless, and a
+//! difference listed there is reported as explained rather than as a failure.
 
 use regex::Regex;
+use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -27,6 +33,43 @@ pub fn parse_defines(text: &str) -> Defines {
         } else if let Some(rest) = line.strip_prefix("/* #undef ") {
             let name = rest.trim_end_matches("*/").trim();
             out.insert(name.to_string(), None);
+        }
+    }
+    out
+}
+
+/// Read the variables a `Makefile.global` sets, as name and value.
+///
+/// Only assignments at the start of a line are read, which is how configure writes every one it
+/// substitutes. A continued line is joined with a space, `+=` appends, and a variable set twice keeps
+/// the last value, as make would.
+#[must_use]
+pub fn parse_makefile(text: &str) -> BTreeMap<String, String> {
+    let assign =
+        Regex::new(r"^([A-Za-z_][A-Za-z0-9_]*)\s*([:+?]?=)\s*(.*)$").expect("assignment pattern");
+    let mut out = BTreeMap::new();
+    let mut lines = text.lines();
+    while let Some(first) = lines.next() {
+        let mut line = first.to_string();
+        while line.ends_with('\\') {
+            line.pop();
+            line.truncate(line.trim_end().len());
+            let Some(next) = lines.next() else { break };
+            line.push(' ');
+            line.push_str(next.trim());
+        }
+        let Some(c) = assign.captures(&line) else {
+            continue;
+        };
+        let value = c[3].trim().to_string();
+        if &c[2] == "+=" {
+            let old: &mut String = out.entry(c[1].to_string()).or_default();
+            if !old.is_empty() {
+                old.push(' ');
+            }
+            old.push_str(&value);
+        } else if &c[2] != "?=" || !out.contains_key(&c[1]) {
+            out.insert(c[1].to_string(), value);
         }
     }
     out
@@ -76,7 +119,7 @@ pub fn parse_configure_probes(text: &str) -> BTreeMap<String, String> {
 /// One disagreement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Difference {
-    /// `pg_config.h` or `probe`.
+    /// `pg_config.h`, `Makefile.global` or `probe`.
     pub source: &'static str,
     /// The define or the question.
     pub name: String,
@@ -114,6 +157,15 @@ pub fn diff_defines(a: &Defines, b: &Defines) -> Vec<Difference> {
     diff_maps("pg_config.h", a, b, |v| {
         v.clone().unwrap_or_else(|| "#undef".to_string())
     })
+}
+
+/// Compare two sets of `Makefile.global` variables.
+#[must_use]
+pub fn diff_makefiles(
+    a: &BTreeMap<String, String>,
+    b: &BTreeMap<String, String>,
+) -> Vec<Difference> {
+    diff_maps("Makefile.global", a, b, Clone::clone)
 }
 
 /// Compare two sets of probe results.
@@ -160,6 +212,12 @@ impl Side {
         Ok(parse_defines(&self.normalize(&text)))
     }
 
+    /// The variables of `src/Makefile.global`, or `None` for a tree without one.
+    fn makefile(&self) -> Option<BTreeMap<String, String>> {
+        self.read("src/Makefile.global")
+            .map(|text| parse_makefile(&self.normalize(&text)))
+    }
+
     fn probes(&self) -> BTreeMap<String, String> {
         if let Some(text) = self.read("meson-logs/meson-log.txt") {
             return parse_meson_probes(&self.normalize(&text));
@@ -174,8 +232,109 @@ impl Side {
 pub fn diff(a: &Path, b: &Path) -> Result<Vec<Difference>, String> {
     let (a, b) = (Side::new(a), Side::new(b));
     let mut out = diff_defines(&a.defines()?, &b.defines()?);
+    match (a.makefile(), b.makefile()) {
+        (Some(x), Some(y)) => out.extend(diff_makefiles(&x, &y)),
+        (None, None) => {}
+        (x, _) => {
+            let missing = if x.is_none() { &a.tree } else { &b.tree };
+            return Err(format!(
+                "{} has no src/Makefile.global and the other tree has one",
+                missing.display()
+            ));
+        }
+    }
     out.extend(diff_probes(&a.probes(), &b.probes()));
     Ok(out)
+}
+
+/// One entry of `config-divergences.toml`: a difference that is expected, and why it is harmless.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Divergence {
+    /// `pg_config.h`, `Makefile.global` or `probe`.
+    pub source: String,
+    /// The define, variable or question. A name ending in `*` matches every name that starts with
+    /// what comes before it.
+    pub name: String,
+    /// Why the difference does not change which code is compiled.
+    pub why: String,
+}
+
+impl Divergence {
+    fn matches(&self, d: &Difference) -> bool {
+        self.source == d.source
+            && match self.name.strip_suffix('*') {
+                Some(prefix) => d.name.starts_with(prefix),
+                None => self.name == d.name,
+            }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DivergenceFile {
+    #[serde(default)]
+    divergence: Vec<Divergence>,
+}
+
+/// Read `config-divergences.toml`. Every entry has to say why, since an entry without a reason is
+/// a difference nobody looked at.
+pub fn parse_divergences(text: &str) -> Result<Vec<Divergence>, String> {
+    let file: DivergenceFile =
+        toml::from_str(text).map_err(|e| format!("config-divergences.toml: {e}"))?;
+    for d in &file.divergence {
+        if !["pg_config.h", "Makefile.global", "probe"].contains(&d.source.as_str()) {
+            return Err(format!(
+                "config-divergences.toml: {} has source {:?}, which is not pg_config.h, Makefile.global or probe",
+                d.name, d.source
+            ));
+        }
+        if d.why.trim().is_empty() {
+            return Err(format!(
+                "config-divergences.toml: {} {} does not say why it is harmless",
+                d.source, d.name
+            ));
+        }
+    }
+    Ok(file.divergence)
+}
+
+/// The differences split by whether `config-divergences.toml` explains them, and the entries that
+/// explained nothing this time.
+pub struct Sorted<'a> {
+    /// Differences no entry matches. Any of these fails the comparison.
+    pub unexplained: Vec<Difference>,
+    /// Differences with the entry that matched them.
+    pub explained: Vec<(Difference, &'a Divergence)>,
+    /// Entries that matched no difference.
+    pub unused: Vec<&'a Divergence>,
+}
+
+/// Match each difference against the divergences, first match wins.
+#[must_use]
+pub fn sort(differences: Vec<Difference>, divergences: &[Divergence]) -> Sorted<'_> {
+    let mut used = vec![false; divergences.len()];
+    let mut sorted = Sorted {
+        unexplained: Vec::new(),
+        explained: Vec::new(),
+        unused: Vec::new(),
+    };
+    for d in differences {
+        match divergences.iter().position(|v| v.matches(&d)) {
+            Some(i) => {
+                used[i] = true;
+                sorted.explained.push((d, &divergences[i]));
+            }
+            None => sorted.unexplained.push(d),
+        }
+    }
+    sorted.unused = divergences
+        .iter()
+        .zip(used)
+        .filter(|(_, u)| !u)
+        .map(|(v, _)| v)
+        .collect();
+    sorted
 }
 
 /// Print the differences, one per line.
@@ -238,6 +397,55 @@ mod tests {
             "NO"
         );
         assert_eq!(probes.len(), 6);
+    }
+
+    #[test]
+    fn makefile_assignments_are_read_as_make_would() {
+        let text = "# comment\nCC = gcc\nCFLAGS = -O2 \\\n\t-g\nLIBS := -lm\nLIBS += -ldl\nX ?= 1\nX ?= 2\n\tRECIPE = no\nifeq ($(A),yes)\nendif\n";
+        let vars = parse_makefile(text);
+        assert_eq!(vars["CC"], "gcc");
+        assert_eq!(vars["CFLAGS"], "-O2 -g");
+        assert_eq!(vars["LIBS"], "-lm -ldl");
+        assert_eq!(vars["X"], "1");
+        assert_eq!(vars.len(), 4);
+    }
+
+    #[test]
+    fn a_divergence_explains_its_difference_and_nothing_else() {
+        let divergences = parse_divergences(
+            "[[divergence]]\nsource = \"pg_config.h\"\nname = \"PG_VERSION_STR\"\nwhy = \"the compiler's name\"\n\n[[divergence]]\nsource = \"Makefile.global\"\nname = \"CFLAGS_*\"\nwhy = \"warning flags\"\n\n[[divergence]]\nsource = \"probe\"\nname = \"never\"\nwhy = \"stale\"\n",
+        )
+        .expect("parses");
+        let a = parse_defines("#define PG_VERSION_STR \"gcc\"\n#define HAVE_X 1\n");
+        let b = parse_defines("#define PG_VERSION_STR \"rucc\"\n");
+        let mut differences = diff_defines(&a, &b);
+        differences.extend(diff_makefiles(
+            &parse_makefile("CFLAGS_SL = -fPIC\nCFLAGS = -O2\n"),
+            &parse_makefile("CFLAGS_SL = -fpic\nCFLAGS = -O2\n"),
+        ));
+        let sorted = sort(differences, &divergences);
+        let unexplained: Vec<&str> = sorted.unexplained.iter().map(|d| d.name.as_str()).collect();
+        assert_eq!(unexplained, ["HAVE_X"]);
+        let explained: Vec<&str> = sorted
+            .explained
+            .iter()
+            .map(|(d, _)| d.name.as_str())
+            .collect();
+        assert_eq!(explained, ["PG_VERSION_STR", "CFLAGS_SL"]);
+        assert_eq!(sorted.unused.len(), 1);
+        assert_eq!(sorted.unused[0].name, "never");
+    }
+
+    #[test]
+    fn a_divergence_without_a_reason_is_refused() {
+        let err =
+            parse_divergences("[[divergence]]\nsource = \"probe\"\nname = \"x\"\nwhy = \" \"\n")
+                .expect_err("refused");
+        assert!(err.contains("does not say why"), "{err}");
+        let err =
+            parse_divergences("[[divergence]]\nsource = \"config.h\"\nname = \"x\"\nwhy = \"y\"\n")
+                .expect_err("refused");
+        assert!(err.contains("not pg_config.h"), "{err}");
     }
 
     #[test]

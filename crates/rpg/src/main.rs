@@ -37,7 +37,7 @@ fn main() -> ExitCode {
             "test" => test_command(&repo, &args),
             "baseline" => baseline_command(&repo, &args),
             "demands" => demands_command(&repo, &args),
-            "config-diff" => config_diff(&args),
+            "config-diff" => config_diff(&repo, &args),
             "repro" => repro_command(&args),
             "asm-audit" => asm_audit_command(&repo, &args),
             _ => unreachable!("the parser only accepts known commands"),
@@ -393,15 +393,35 @@ fn demands_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn config_diff(args: &Args) -> Result<ExitCode, String> {
+fn config_diff(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let differences = configdiff::diff(Path::new(args.need("a")?), Path::new(args.need("b")?))?;
-    if differences.is_empty() {
-        println!("no differences");
-        return Ok(ExitCode::SUCCESS);
+    let path = args
+        .get("divergences")
+        .map_or_else(|| repo.root.join("config-divergences.toml"), PathBuf::from);
+    let divergences = match std::fs::read_to_string(&path) {
+        Ok(text) => configdiff::parse_divergences(&text)?,
+        Err(_) if args.get("divergences").is_none() => Vec::new(),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let sorted = configdiff::sort(differences, &divergences);
+    for (d, v) in &sorted.explained {
+        println!("explained, {}: {}\n  because {}", d.source, d.name, v.why);
     }
-    print!("{}", configdiff::report(&differences));
-    println!("{} differences", differences.len());
-    Ok(ExitCode::FAILURE)
+    for v in &sorted.unused {
+        println!("unused entry, {}: {}", v.source, v.name);
+    }
+    print!("{}", configdiff::report(&sorted.unexplained));
+    println!(
+        "{} unexplained, {} explained by {}",
+        sorted.unexplained.len(),
+        sorted.explained.len(),
+        path.display()
+    );
+    Ok(if sorted.unexplained.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
 }
 
 fn repro_command(args: &Args) -> Result<ExitCode, String> {

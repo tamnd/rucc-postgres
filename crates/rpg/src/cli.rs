@@ -31,7 +31,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
             "row", "runs", "pin", "config", "system", "level", "cc", "out", "jobs", "suite",
         ],
         "demands" | "asm-audit" => &["pin", "out"],
-        "config-diff" => &["a", "b"],
+        "config-diff" => &["a", "b", "divergences"],
         "repro" => &["build", "file", "out", "object"],
         "help" => &[],
         _ => return None,
@@ -49,7 +49,7 @@ usage:
   rpg test [--suite regress] [--out DIR] [--row ROW] [--records FILE] [--run N] [--timeout S]
   rpg baseline --row ROW [--runs 3] [--system S] [--level L] [--cc PATH] [--config C] [--pin P]
   rpg demands [--pin NAME] [--out FILE]
-  rpg config-diff --a DIR --b DIR
+  rpg config-diff --a DIR --b DIR [--divergences FILE]
   rpg repro --build DIR --file PATH [--out DIR] [--object PART]
   rpg asm-audit [--pin NAME] [--out FILE]
 
