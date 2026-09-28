@@ -27,7 +27,7 @@ target/release/rpg test --suite regress        run the main regression suite aga
 target/release/rpg test --out work/DIR --row L64   the same for a named build, graded against the L64 baseline
 target/release/rpg baseline --row L64          build with the row's reference compiler and run the suites three times
 target/release/rpg demands                     scan the tree and rewrite demands.toml
-target/release/rpg config-diff --a work/A --b work/B   compare what two configured trees decided
+target/release/rpg config-diff --a work/A --b work/B   compare what two configured trees decided, less config-divergences.toml
 target/release/rpg repro --build work/DIR --file src/backend/parser/gram.c   bundle one translation unit for a bug report
 target/release/rpg asm-audit                   list every inline assembly statement and rewrite asm-audit.toml
 ```
@@ -37,6 +37,8 @@ target/release/rpg asm-audit                   list every inline assembly statem
 `rpg build` takes `--cc`, `--level -O0` or `-O2` (the default), `--system meson` (the default) or `autoconf`, `--config minimal`, `--out DIR`, `--jobs N` and `--twice`. The build directory defaults to `work/<pin>-<config>-<system>-<level>-<compiler>` and holds `configure.log`, `build.log`, the Postgres build tree under `build/`, `compile.jsonl`, `compile_commands.json` and `build.json`, which says what was built with what, how long each step took, and where the build stopped if it stopped.
 
 `rpg test` refuses to run as root, because initdb does. Under meson it runs `meson test --suite setup` and then `--suite regress`. Under autoconf it runs `make check`. It sets `PG_TEST_TIMEOUT_DEFAULT` from the row, doubled at `-O0`, copies `regression.out`, `regression.diffs` and the server logs of each run into `results/<suite>/run-<n>/`, and appends one line per test to `records.jsonl`. A failing test is `crashed` rather than `failed` when the postmaster log says a backend was terminated by a signal. It exits nonzero when a test fails that the baseline says passes, or any test fails when there is no baseline.
+
+`rpg config-diff` reads `pg_config.h`, the variables `src/Makefile.global` sets and the probe answers from meson's log or configure's output in both trees, with each tree's own paths replaced so that two build directories compare equal. A difference listed in `config-divergences.toml`, or in the file `--divergences` names, is printed as explained along with the reason the entry gives, and an entry that matched nothing is printed so it can be taken out. Every entry has to say why the difference does not change which code is compiled. The command exits nonzero when any difference is left unexplained.
 
 `rpg repro` finds the one call in a build's `compile.jsonl` that compiled the named file, which is given relative to the Postgres source tree, or to the build tree for a generated file such as `gram.c`. It writes a bundle directory, by default `repro/<path>` inside the build directory or `--out DIR`, with the preprocessed source `<name>.i`, made by running the recorded command again in the recorded directory with `-E -o` in place of `-c -o` and without the dependency file options, `command.txt` with the recorded command line, directory and environment, `compile.sh`, which compiles the `.i` again with the recorded flags minus `-I`, `-D`, `-U`, `-include`, `-M*` and the other preprocessor options, and `compiler.txt` with the compiler's `--version` and the commit of the checkout it was built in, since `rucc --version` names a release and not a commit. `CC=... compile.sh` runs the same compile with another compiler. When no call compiled the file it says so, and when several did, as for the files of `src/port` that meson builds three times, it lists their objects and `--object PART` picks one. This is what goes with a rucc bug report.
 
@@ -86,6 +88,11 @@ PG0, the harness itself. The first runs were on server2, an Ubuntu 24.04 x86-64 
 - Under meson, rucc 0.11.15 got through configure and compiled all 1073 translation units the backend needs, in 81 seconds and 196 user seconds, peaking at 304 MB on `gram.c`. It stopped at the link of `src/backend/postgres`, the one link meson does through a response file: rucc passed `-Wl,--as-needed` from `@postgres.rsp` to `ld` as it was, while the same option on a command line works.
 - Under autoconf, which uses no response files, rucc built the whole of `world-bin`, 1417 translation units with no failures, in 25 seconds of configure and 108 of build. That build passed 231 of 231 regression tests in 45 seconds, and the version string in the `postgres` binary says `compiled by rucc 0.11.15`.
 - `rpg config-diff` between the two meson trees shows rucc's configure answers differing in 9 `pg_config.h` defines. rucc answers no to the probes for `__get_cpuid`, `__get_cpuid_count`, the SSE 4.2, AVX-512 and XSAVE intrinsics and the `popcntq` inline assembly, so Postgres falls back to slicing by 8 CRC32C and no runtime popcount check. The other differences are the compiler version string and a few warning flags.
+
+PG1, the same tree with the probes answered. On gpc, an x86-64 machine with 32 cores, using gcc-16 16.2.0 and rucc 0.11.18 at tamnd/rucc@9615dc28, autoconf and `-j32`:
+
+- Both compilers built all 1423 translation units at `-O0` and at `-O2` with no failures. rucc's largest compile is `gram.c`, at 245 MB peak RSS at `-O0` and 301 MB at `-O2`, against gcc's 158 MB and 224 MB.
+- `rpg config-diff` between the gcc-16 and rucc trees finds one difference at each level, `PG_VERSION_STR`, which `config-divergences.toml` explains. `pg_config.h`, `Makefile.global` and every configure answer are otherwise the same, including `__get_cpuid`, `__get_cpuid_count`, the SSE 4.2 and AVX-512 intrinsics and `popcntq`, so a rucc build now compiles the same CRC32C and popcount choosers gcc's does.
 
 ## Licence
 
