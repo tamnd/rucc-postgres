@@ -30,8 +30,9 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "baseline" => &[
             "row", "runs", "pin", "config", "system", "level", "cc", "out", "jobs", "suite",
         ],
-        "demands" => &["pin", "out"],
+        "demands" | "asm-audit" => &["pin", "out"],
         "config-diff" => &["a", "b"],
+        "repro" => &["build", "file", "out", "object"],
         "help" => &[],
         _ => return None,
     })
@@ -49,6 +50,8 @@ usage:
   rpg baseline --row ROW [--runs 3] [--system S] [--level L] [--cc PATH] [--config C] [--pin P]
   rpg demands [--pin NAME] [--out FILE]
   rpg config-diff --a DIR --b DIR
+  rpg repro --build DIR --file PATH [--out DIR] [--object PART]
+  rpg asm-audit [--pin NAME] [--out FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked
 sources go to RPG_CACHE, or ~/.cache/rpg. Build directories default to work/ in the repository.

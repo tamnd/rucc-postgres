@@ -1,5 +1,6 @@
 //! The `rpg` command line: fetch, build and test the pinned Postgres tree, and record what happened.
 
+mod asmaudit;
 mod baseline;
 mod build;
 mod cli;
@@ -11,6 +12,7 @@ mod process;
 mod records;
 mod regress;
 mod repo;
+mod repro;
 mod settings;
 mod suite;
 
@@ -36,6 +38,8 @@ fn main() -> ExitCode {
             "baseline" => baseline_command(&repo, &args),
             "demands" => demands_command(&repo, &args),
             "config-diff" => config_diff(&args),
+            "repro" => repro_command(&args),
+            "asm-audit" => asm_audit_command(&repo, &args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -398,4 +402,66 @@ fn config_diff(args: &Args) -> Result<ExitCode, String> {
     print!("{}", configdiff::report(&differences));
     println!("{} differences", differences.len());
     Ok(ExitCode::FAILURE)
+}
+
+fn repro_command(args: &Args) -> Result<ExitCode, String> {
+    let build = PathBuf::from(args.need("build")?);
+    let build = std::fs::canonicalize(&build).unwrap_or(build);
+    let file = args.need("file")?;
+    let out = args
+        .get("out")
+        .map_or_else(|| repro::default_out(&build, file), PathBuf::from);
+    let bundle = repro::repro(&repro::Request {
+        build: &build,
+        file,
+        out: &out,
+        object: args.get("object"),
+    })?;
+    println!("bundle:    {}", bundle.dir.display());
+    println!("compiler:  {}", bundle.compiler);
+    println!("written:   command.txt, compile.sh, compiler.txt");
+    match (&bundle.preprocessed, &bundle.preprocess_error) {
+        (Some(path), _) => {
+            println!("source:    {}", path.display());
+            Ok(ExitCode::SUCCESS)
+        }
+        (None, error) => {
+            println!(
+                "no preprocessed source: {}",
+                error.as_deref().unwrap_or("the compiler wrote nothing")
+            );
+            Ok(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn asm_audit_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let pin = load_pin(repo, args)?;
+    let source = source_of(&pin)?;
+    let path = args
+        .get("out")
+        .map_or_else(|| repo.root.join("asm-audit.toml"), PathBuf::from);
+    let mut audit = asmaudit::scan_tree(&source)?;
+    audit.pin.clone_from(&pin.name);
+    audit.commit.clone_from(&pin.commit);
+    asmaudit::save(&path, &audit)?;
+    println!(
+        "scanned {} files of {}: {} inline assembly statements in {} files",
+        audit.file_count,
+        pin.name,
+        audit.statement_count,
+        audit.files.len()
+    );
+    let list = |counts: &std::collections::BTreeMap<String, usize>| {
+        counts
+            .iter()
+            .map(|(k, n)| format!("\"{k}\" {n}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    println!("  output constraints: {}", list(&audit.output_constraints));
+    println!("  input constraints:  {}", list(&audit.input_constraints));
+    println!("  clobbers:           {}", list(&audit.clobbers));
+    println!("written:   {}", path.display());
+    Ok(ExitCode::SUCCESS)
 }

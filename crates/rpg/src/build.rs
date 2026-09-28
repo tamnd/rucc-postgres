@@ -193,7 +193,7 @@ fn subject(record: &CompileRecord, roots: &[&Path]) -> String {
 }
 
 /// Remove `.` and `..` from a path without asking the file system.
-fn lexical(path: &Path) -> PathBuf {
+pub fn lexical(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for part in path.components() {
         match part {
