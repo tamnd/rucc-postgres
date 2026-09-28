@@ -1,0 +1,16 @@
+# The Postgres releases this repository builds, each a URL, a SHA-256 and the commit its tag
+# points at. `rpg fetch` checks the hash on every use and checks it against the `.sha256` file the
+# project publishes next to the tarball.
+#
+# The hash below was computed from the downloaded tarball and agrees with the published one. The
+# commit is what `git ls-remote https://github.com/postgres/postgres.git refs/tags/REL_18_6` says.
+
+default = "REL_18_6"
+
+[[pin]]
+name = "REL_18_6"
+version = "18.6"
+url = "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2"
+sha256 = "555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f"
+checksum-url = "https://ftp.postgresql.org/pub/source/v18.6/postgresql-18.6.tar.bz2.sha256"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
