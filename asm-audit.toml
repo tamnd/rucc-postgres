@@ -1,0 +1,877 @@
+# Every inline assembly statement in the pinned Postgres tree, written by rpg asm-audit.
+#
+# A text scan, not a parse: it lists what is written, not what a given target compiles, and
+# `guard` shows the #if lines each statement sits under. The counts at the top are per operand
+# and per clobber. `constraint-letters` splits each constraint into its letters, with the
+# modifiers = + & % counted on their own and a matching constraint such as "0" as `matching`.
+
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+scanned = ["src", "contrib"]
+file-count = 2486
+statement-count = 43
+
+[files]
+"src/include/lib/radixtree.h" = 2
+"src/include/port/atomics/arch-ppc.h" = 11
+"src/include/port/atomics/arch-x86.h" = 10
+"src/include/port/atomics/generic-gcc.h" = 1
+"src/include/storage/s_lock.h" = 17
+"src/port/pg_bitutils.c" = 2
+
+[kinds]
+basic = 6
+extended = 35
+msvc = 2
+
+[qualifiers]
+__volatile__ = 39
+
+[output-constraints]
+"+R" = 1
+"+d" = 1
+"+m" = 14
+"+q" = 3
+"=&b" = 3
+"=&r" = 12
+"=a" = 2
+"=m" = 4
+"=q" = 6
+"=r" = 6
+
+[input-constraints]
+0 = 2
+a = 3
+d = 1
+i = 4
+m = 4
+r = 20
+rm = 2
+
+[constraint-letters]
+"&" = 15
+"+" = 19
+"=" = 33
+R = 1
+a = 5
+b = 3
+d = 2
+i = 4
+m = 24
+matching = 2
+q = 9
+r = 40
+
+[clobbers]
+cc = 20
+memory = 33
+
+[[asm]]
+file = "src/include/lib/radixtree.h"
+line = 1240
+function = "RT_SHIFT_ARRAYS_FOR_INSERT"
+guard = ["#ifdef RT_DEFINE", "#ifdef __GNUC__"]
+keyword = "__asm__"
+kind = "basic"
+template = ""
+
+[[asm]]
+file = "src/include/lib/radixtree.h"
+line = 2249
+function = "RT_SHIFT_ARRAYS_AND_DELETE"
+guard = ["#ifdef RT_DEFINE", "#ifdef RT_USE_DELETE", "#ifdef __GNUC__"]
+keyword = "__asm__"
+kind = "basic"
+template = ""
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 23
+macro = "pg_memory_barrier_impl"
+guard = ["#if defined(__GNUC__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = "sync"
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 24
+macro = "pg_read_barrier_impl"
+guard = ["#if defined(__GNUC__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = "lwsync"
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 25
+macro = "pg_write_barrier_impl"
+guard = ["#if defined(__GNUC__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = "lwsync"
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 91
+function = "pg_atomic_compare_exchange_u32_impl"
+guard = ["#ifdef HAVE_I_CONSTRAINT__BUILTIN_CONSTANT_P"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	lwarx   %0,0,%5,1	\n	cmpwi   %0,%3		\n	bne     $+12		\n	stwcx.  %4,0,%5		\n	bne     $-16		\n	lwsync				\n	mfcr    %1          \n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "found"
+
+[[asm.outputs]]
+constraint = "=r"
+expr = "condition_register"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "i"
+expr = "*expected"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "newval"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 105
+function = "pg_atomic_compare_exchange_u32_impl"
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	lwarx   %0,0,%5,1	\n	cmpw    %0,%3		\n	bne     $+12		\n	stwcx.  %4,0,%5		\n	bne     $-16		\n	lwsync				\n	mfcr    %1          \n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "found"
+
+[[asm.outputs]]
+constraint = "=r"
+expr = "condition_register"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "*expected"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "newval"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 139
+function = "pg_atomic_fetch_add_u32_impl"
+guard = ["#ifdef HAVE_I_CONSTRAINT__BUILTIN_CONSTANT_P"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	lwarx   %1,0,%4,1	\n	addi    %0,%1,%3	\n	stwcx.  %0,0,%4		\n	bne     $-12		\n	lwsync				\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "_t"
+
+[[asm.outputs]]
+constraint = "=&b"
+expr = "res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "i"
+expr = "add_"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 151
+function = "pg_atomic_fetch_add_u32_impl"
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	lwarx   %1,0,%4,1	\n	add     %0,%1,%3	\n	stwcx.  %0,0,%4		\n	bne     $-12		\n	lwsync				\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "_t"
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "add_"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 183
+function = "pg_atomic_compare_exchange_u64_impl"
+guard = ["#ifdef PG_HAVE_ATOMIC_U64_SUPPORT", "#ifdef HAVE_I_CONSTRAINT__BUILTIN_CONSTANT_P"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	ldarx   %0,0,%5,1	\n	cmpdi   %0,%3		\n	bne     $+12		\n	stdcx.  %4,0,%5		\n	bne     $-16		\n	lwsync				\n	mfcr    %1          \n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "found"
+
+[[asm.outputs]]
+constraint = "=r"
+expr = "condition_register"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "i"
+expr = "*expected"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "newval"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 197
+function = "pg_atomic_compare_exchange_u64_impl"
+guard = ["#ifdef PG_HAVE_ATOMIC_U64_SUPPORT"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	ldarx   %0,0,%5,1	\n	cmpd    %0,%3		\n	bne     $+12		\n	stdcx.  %4,0,%5		\n	bne     $-16		\n	lwsync				\n	mfcr    %1          \n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "found"
+
+[[asm.outputs]]
+constraint = "=r"
+expr = "condition_register"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "*expected"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "newval"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 227
+function = "pg_atomic_fetch_add_u64_impl"
+guard = ["#ifdef PG_HAVE_ATOMIC_U64_SUPPORT", "#ifdef HAVE_I_CONSTRAINT__BUILTIN_CONSTANT_P"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	ldarx   %1,0,%4,1	\n	addi    %0,%1,%3	\n	stdcx.  %0,0,%4		\n	bne     $-12		\n	lwsync				\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "_t"
+
+[[asm.outputs]]
+constraint = "=&b"
+expr = "res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "i"
+expr = "add_"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-ppc.h"
+line = 239
+function = "pg_atomic_fetch_add_u64_impl"
+guard = ["#ifdef PG_HAVE_ATOMIC_U64_SUPPORT"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	sync				\n	ldarx   %1,0,%4,1	\n	add     %0,%1,%3	\n	stdcx.  %0,0,%4		\n	bne     $-12		\n	lwsync				\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "_t"
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "add_"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "&ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 37
+macro = "pg_memory_barrier_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__i386__) || defined(__i386)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = "lock; addl $0,0(%%esp)"
+clobbers = ["memory", "cc"]
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 40
+macro = "pg_memory_barrier_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#elif defined(__x86_64__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = "lock; addl $0,0(%%rsp)"
+clobbers = ["memory", "cc"]
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 110
+function = "pg_spin_delay_impl"
+guard = ["#if !defined(PG_HAVE_SPIN_DELAY)", "#if defined(__GNUC__) || defined(__INTEL_COMPILER)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "basic"
+template = ' rep; nop			\n'
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 125
+function = "pg_spin_delay_impl"
+guard = ["#if !defined(PG_HAVE_SPIN_DELAY)", "#elif defined(_MSC_VER)"]
+keyword = "__asm"
+kind = "msvc"
+template = "rep nop"
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 139
+function = "pg_atomic_test_set_flag_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lock			\n	xchgb	%0,%1	\n'
+clobbers = ["memory"]
+
+[[asm.outputs]]
+constraint = "+q"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 156
+function = "pg_atomic_clear_flag_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = ""
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 171
+function = "pg_atomic_compare_exchange_u32_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lock				\n	cmpxchgl	%4,%5	\n   setz		%2		\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=a"
+expr = "*expected"
+
+[[asm.outputs]]
+constraint = "=m"
+expr = "ptr->value"
+
+[[asm.outputs]]
+constraint = "=q"
+expr = "ret"
+
+[[asm.inputs]]
+constraint = "a"
+expr = "*expected"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "newval"
+
+[[asm.inputs]]
+constraint = "m"
+expr = "ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 186
+function = "pg_atomic_fetch_add_u32_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lock				\n	xaddl	%0,%1		\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=q"
+expr = "res"
+
+[[asm.outputs]]
+constraint = "=m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "0"
+expr = "add_"
+
+[[asm.inputs]]
+constraint = "m"
+expr = "ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 210
+function = "pg_atomic_compare_exchange_u64_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#ifdef __x86_64__"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lock				\n	cmpxchgq	%4,%5	\n   setz		%2		\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=a"
+expr = "*expected"
+
+[[asm.outputs]]
+constraint = "=m"
+expr = "ptr->value"
+
+[[asm.outputs]]
+constraint = "=q"
+expr = "ret"
+
+[[asm.inputs]]
+constraint = "a"
+expr = "*expected"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "newval"
+
+[[asm.inputs]]
+constraint = "m"
+expr = "ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/arch-x86.h"
+line = 225
+function = "pg_atomic_fetch_add_u64_impl"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#ifdef __x86_64__"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lock				\n	xaddq	%0,%1		\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=q"
+expr = "res"
+
+[[asm.outputs]]
+constraint = "=m"
+expr = "ptr->value"
+
+[[asm.inputs]]
+constraint = "0"
+expr = "add_"
+
+[[asm.inputs]]
+constraint = "m"
+expr = "ptr->value"
+
+[[asm]]
+file = "src/include/port/atomics/generic-gcc.h"
+line = 30
+macro = "pg_compiler_barrier_impl"
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = ""
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 149
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#ifdef __i386__"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	cmpb	$0,%1	\n	jne		1f		\n	lock			\n	xchgb	%0,%1	\n1: \n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "+q"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "*lock"
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 189
+function = "spin_delay"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#ifdef __i386__"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "basic"
+template = ' rep; nop			\n'
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 219
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#ifdef __x86_64__"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lock			\n	xchgb	%0,%1	\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "+q"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "*lock"
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 237
+function = "spin_delay"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#ifdef __x86_64__"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "basic"
+template = ' rep; nop			\n'
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 284
+function = "spin_delay"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__arm__) || defined(__arm) || defined(__aarch64__)", "#ifdef HAVE_GCC__SYNC_INT32_TAS", "#if defined(__aarch64__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "basic"
+template = ' isb;				\n'
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 306
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__s390__) || defined(__s390x__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	cs 	%0,%3,0(%2)		\n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "+d"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "*lock"
+
+[[asm.inputs]]
+constraint = "a"
+expr = "lock"
+
+[[asm.inputs]]
+constraint = "d"
+expr = "1"
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 340
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__sparc__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	ldstub	[%2], %0	\n'
+clobbers = ["memory"]
+
+[[asm.outputs]]
+constraint = "=r"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "*lock"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "lock"
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 352
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__sparc__)", "#elif defined(__sparcv8) || defined(__sparc_v8__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = 'stbar	 \n'
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 358
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__sparc__)", "#else of #if defined(__sparcv7) || defined(__sparc_v7__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = 'membar #LoadStore | #LoadLoad \n'
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 374
+macro = "S_UNLOCK"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__sparc__)", "#elif defined(__sparcv8) || defined(__sparc_v8__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = 'stbar	 \n'
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 385
+macro = "S_UNLOCK"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__sparc__)", "#else of #if defined(__sparcv7) || defined(__sparc_v7__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = 'membar #LoadStore | #StoreStore \n'
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 421
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__ppc__) || defined(__powerpc__) || defined(__ppc64__) || defined(__powerpc64__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lwarx   %0,0,%3,1	\n	cmpwi   %0,0		\n	bne     1f			\n	addi    %0,%0,1		\n	stwcx.  %0,0,%3		\n	beq     2f			\n1: \n	li      %1,1		\n	b       3f			\n2: \n	lwsync				\n	li      %1,0		\n3: \n'
+clobbers = ["memory", "cc"]
+
+[[asm.outputs]]
+constraint = "=&b"
+expr = "_t"
+
+[[asm.outputs]]
+constraint = "=r"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "+m"
+expr = "*lock"
+
+[[asm.inputs]]
+constraint = "r"
+expr = "lock"
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 448
+macro = "S_UNLOCK"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__ppc__) || defined(__powerpc__) || defined(__ppc64__) || defined(__powerpc64__)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '	lwsync \n'
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 488
+function = "tas"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__mips__) && !defined(__sgi)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '"       .set push           \n" MIPS_SET_MIPS2 "       .set noreorder      \n" "       .set nomacro        \n" "       ll      %0, %2      \n" "       or      %1, %0, 1   \n" "       sc      %1, %2      \n" "       xori    %1, 1       \n" "       or      %0, %0, %1  \n" "       sync                \n" "       .set pop              "'
+clobbers = ["memory"]
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "_res"
+
+[[asm.outputs]]
+constraint = "=&r"
+expr = "_tmp"
+
+[[asm.outputs]]
+constraint = "+R"
+expr = "*_l"
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 510
+macro = "S_UNLOCK"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if defined(__mips__) && !defined(__sgi)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = '"       .set push           \n" MIPS_SET_MIPS2 "       .set noreorder      \n" "       .set nomacro        \n" "       sync                \n" "       .set pop              "'
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 583
+macro = "S_UNLOCK"
+guard = ["#if defined(__GNUC__) || defined(__INTEL_COMPILER)", "#if !defined(S_UNLOCK)"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = ""
+clobbers = ["memory"]
+
+[[asm]]
+file = "src/include/storage/s_lock.h"
+line = 637
+function = "spin_delay"
+guard = ["#if !defined(HAS_TEST_AND_SET)", "#ifdef _MSC_VER", "#else of #if defined(_WIN64)"]
+keyword = "__asm"
+kind = "msvc"
+template = "rep nop"
+
+[[asm]]
+file = "src/port/pg_bitutils.c"
+line = 227
+function = "pg_popcount32_fast"
+guard = ["#ifdef TRY_POPCNT_X86_64", "#else of #ifdef _MSC_VER"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = ' popcntl %1,%0\n'
+clobbers = ["cc"]
+
+[[asm.outputs]]
+constraint = "=q"
+expr = "res"
+
+[[asm.inputs]]
+constraint = "rm"
+expr = "word"
+
+[[asm]]
+file = "src/port/pg_bitutils.c"
+line = 244
+function = "pg_popcount64_fast"
+guard = ["#ifdef TRY_POPCNT_X86_64", "#else of #ifdef _MSC_VER"]
+keyword = "__asm__"
+qualifiers = ["__volatile__"]
+kind = "extended"
+template = ' popcntq %1,%0\n'
+clobbers = ["cc"]
+
+[[asm.outputs]]
+constraint = "=q"
+expr = "res"
+
+[[asm.inputs]]
+constraint = "rm"
+expr = "word"

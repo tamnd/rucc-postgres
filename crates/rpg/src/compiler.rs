@@ -126,7 +126,7 @@ impl Compiler {
 /// `rucc --version` prints a release number and not a commit, and a record that names a release
 /// when the binary came from a branch is wrong about which compiler ran. A binary under
 /// `<checkout>/target/release` is the common case on the machines this runs on.
-fn checkout_commit(binary: &Path) -> Option<String> {
+pub fn checkout_commit(binary: &Path) -> Option<String> {
     let mut dir = binary.parent();
     while let Some(here) = dir {
         if here.join(".git").exists() {

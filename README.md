@@ -28,6 +28,8 @@ target/release/rpg test --out work/DIR --row L64   the same for a named build, g
 target/release/rpg baseline --row L64          build with the row's reference compiler and run the suites three times
 target/release/rpg demands                     scan the tree and rewrite demands.toml
 target/release/rpg config-diff --a work/A --b work/B   compare what two configured trees decided
+target/release/rpg repro --build work/DIR --file src/backend/parser/gram.c   bundle one translation unit for a bug report
+target/release/rpg asm-audit                   list every inline assembly statement and rewrite asm-audit.toml
 ```
 
 `rpg fetch` downloads with curl into `RPG_CACHE`, or `~/.cache/rpg`. The archive's SHA-256 has to match `pins.toml` every time it is used, including from the cache, and on a fetch it also has to match the `.sha256` file the Postgres project publishes next to the tarball, which catches a pin written down wrong.
@@ -35,6 +37,8 @@ target/release/rpg config-diff --a work/A --b work/B   compare what two configur
 `rpg build` takes `--cc`, `--level -O0` or `-O2` (the default), `--system meson` (the default) or `autoconf`, `--config minimal`, `--out DIR`, `--jobs N` and `--twice`. The build directory defaults to `work/<pin>-<config>-<system>-<level>-<compiler>` and holds `configure.log`, `build.log`, the Postgres build tree under `build/`, `compile.jsonl`, `compile_commands.json` and `build.json`, which says what was built with what, how long each step took, and where the build stopped if it stopped.
 
 `rpg test` refuses to run as root, because initdb does. Under meson it runs `meson test --suite setup` and then `--suite regress`. Under autoconf it runs `make check`. It sets `PG_TEST_TIMEOUT_DEFAULT` from the row, doubled at `-O0`, copies `regression.out`, `regression.diffs` and the server logs of each run into `results/<suite>/run-<n>/`, and appends one line per test to `records.jsonl`. A failing test is `crashed` rather than `failed` when the postmaster log says a backend was terminated by a signal. It exits nonzero when a test fails that the baseline says passes, or any test fails when there is no baseline.
+
+`rpg repro` finds the one call in a build's `compile.jsonl` that compiled the named file, which is given relative to the Postgres source tree, or to the build tree for a generated file such as `gram.c`. It writes a bundle directory, by default `repro/<path>` inside the build directory or `--out DIR`, with the preprocessed source `<name>.i`, made by running the recorded command again in the recorded directory with `-E -o` in place of `-c -o` and without the dependency file options, `command.txt` with the recorded command line, directory and environment, `compile.sh`, which compiles the `.i` again with the recorded flags minus `-I`, `-D`, `-U`, `-include`, `-M*` and the other preprocessor options, and `compiler.txt` with the compiler's `--version` and the commit of the checkout it was built in, since `rucc --version` names a release and not a commit. `CC=... compile.sh` runs the same compile with another compiler. When no call compiled the file it says so, and when several did, as for the files of `src/port` that meson builds three times, it lists their objects and `--object PART` picks one. This is what goes with a rucc bug report.
 
 ## The shim
 
@@ -65,6 +69,12 @@ When the real compiler is rucc, which is anything whose `--version` starts with 
 `demands.toml` is what the pinned tree asks of a C compiler beyond plain C11, found by a text scan of `src` and `contrib` with comments and literal contents removed: 128 bit integers, overflow, atomic and bit builtins, computed goto, inline assembly, target attributes, x86 and Arm intrinsics, cpuid, `sigsetjmp`, `PGDLLIMPORT` and so on, plus one entry per `__builtin_*` name, per attribute and per `pg_attribute_*` macro. Each entry lists the lines per file. The `rucc-status` and `rucc-issue` fields are for a person to fill in, and `rpg demands` keeps them when it rescans.
 
 It counts what is written, not what one target compiles, and a feature behind a Postgres macro is counted where the macro is defined. It is a map for deciding what to look at, not a proof of what rucc needs.
+
+## Inline assembly
+
+`asm-audit.toml` lists every inline assembly statement under `src` and `contrib`, written by `rpg asm-audit` from a small scanner that skips comments and literals and splits each statement at its colons and commas. Each entry has the file, the line, the function or macro it is in, the `#if` lines around it, the qualifiers, the template, the outputs and inputs with their constraints, the clobbers and any goto labels. The top of the file counts statements per file, kind and qualifier, operands per constraint as written and per constraint letter, and clobbers, since those say what a compiler has to understand. Like `demands.toml` it covers every architecture Postgres supports, and the `guard` lines say which one a statement is for.
+
+For REL_18_6 it finds 43 statements in 6 files: 35 extended, 6 basic (with no operands) and 2 in the MSVC `__asm` form. The output constraints are `=r`, `=&r`, `=q`, `=a`, `=m`, `=&b`, `+m`, `+q`, `+d` and `+R`, the input constraints are `r`, `m`, `i`, `a`, `d`, `rm` and the matching `0`, and the only clobbers are `memory` (33) and `cc` (20). The 16 that are not for another architecture, meaning x86-64 code and code for any architecture, use `=q`, `=m`, `=a`, `+q` and `+m` for outputs, `m`, `a`, `r`, `rm` and `0` for inputs, and `memory` and `cc`.
 
 ## Where it stands
 
