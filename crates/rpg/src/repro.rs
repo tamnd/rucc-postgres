@@ -29,7 +29,7 @@ use std::process::Command;
 
 /// The name a record's C input is known by: relative to the first root it falls under, or as it
 /// was written when it is under none of them.
-fn names(record: &CompileRecord, roots: &[&Path]) -> Vec<(String, String)> {
+pub fn names(record: &CompileRecord, roots: &[&Path]) -> Vec<(String, String)> {
     record
         .inputs
         .iter()
@@ -107,7 +107,7 @@ const DROP_WITH_VALUE: &[&str] = &[
 ];
 
 /// Options that only concern writing dependency files, which a rerun must not touch.
-fn is_dependency_option(arg: &str) -> bool {
+pub fn is_dependency_option(arg: &str) -> bool {
     matches!(
         arg,
         "-MD" | "-MMD" | "-MP" | "-M" | "-MM" | "-MG" | "-fpch-deps"

@@ -7,6 +7,7 @@ mod cli;
 mod compiler;
 mod configdiff;
 mod demands;
+mod frames;
 mod pins;
 mod process;
 mod records;
@@ -40,6 +41,7 @@ fn main() -> ExitCode {
             "config-diff" => config_diff(&repo, &args),
             "repro" => repro_command(&args),
             "asm-audit" => asm_audit_command(&repo, &args),
+            "frames" => frames_command(&repo, &args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -483,5 +485,70 @@ fn asm_audit_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     println!("  input constraints:  {}", list(&audit.input_constraints));
     println!("  clobbers:           {}", list(&audit.clobbers));
     println!("written:   {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// A build directory named on the command line, made absolute.
+fn build_dir(args: &Args, name: &str) -> Result<PathBuf, String> {
+    let dir = PathBuf::from(args.need(name)?);
+    std::fs::canonicalize(&dir).map_err(|e| format!("--{name} {}: {e}", dir.display()))
+}
+
+fn frames_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let a = build_dir(args, "a")?;
+    let b = build_dir(args, "b")?;
+    let jobs = args.number("jobs", process::cores())?;
+    let scratch = std::env::temp_dir().join(format!("rpg-frames-{}", std::process::id()));
+    let measured = frames::measure(
+        &a,
+        args.get("a-cc").map(Path::new),
+        jobs,
+        &scratch.join("a"),
+    )
+    .and_then(|ma| {
+        frames::measure(
+            &b,
+            args.get("b-cc").map(Path::new),
+            jobs,
+            &scratch.join("b"),
+        )
+        .map(|mb| (ma, mb))
+    });
+    std::fs::remove_dir_all(&scratch).ok();
+    let (ma, mb) = measured?;
+    let joined = frames::join(&ma.frames, &mb.frames);
+    let text = frames::report(&ma, &mb, &joined, &process::today(), &process::hostname());
+    let out = args.get("out").map_or_else(
+        || frames::default_out(&repo.root, &ma.name, &mb.name),
+        PathBuf::from,
+    );
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&out, &text).map_err(|e| format!("writing {}: {e}", out.display()))?;
+    println!("a:         {} ({})", ma.name, ma.version);
+    println!("b:         {} ({})", mb.name, mb.version);
+    println!(
+        "functions: {} on both sides, {} only in a, {} only in b",
+        joined.pairs.len(),
+        joined.only_a.len(),
+        joined.only_b.len()
+    );
+    if let Some(s) = frames::stats(&joined.pairs) {
+        println!(
+            "b/a:       median {:.2}, p90 {:.2}, p99 {:.2}, max {:.2}",
+            s.median, s.p90, s.p99, s.max
+        );
+    }
+    if !ma.failures.is_empty() || !mb.failures.is_empty() {
+        println!(
+            "failed:    {} compiles in a, {} in b",
+            ma.failures.len(),
+            mb.failures.len()
+        );
+    }
+    println!("written:   {}", out.display());
+    // A measurement, not a gate: the numbers are for reading, and the target belongs to PG2.
     Ok(ExitCode::SUCCESS)
 }
