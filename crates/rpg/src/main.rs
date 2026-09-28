@@ -3,6 +3,7 @@
 mod baseline;
 mod build;
 mod compiler;
+mod configdiff;
 mod demands;
 mod pins;
 mod process;
