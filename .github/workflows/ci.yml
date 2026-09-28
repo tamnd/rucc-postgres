@@ -1,0 +1,64 @@
+# The per commit gate: formatting, lints, the house style and the unit tests.
+#
+# Nothing here builds Postgres. A minimal build takes minutes on a fast machine and the suites
+# need an unprivileged user and a configured machine, which is what the rows in rows.toml and the
+# scripts in provision/ are for. The parsers the harness depends on are tested here with inline
+# fixtures instead.
+#
+# Actions are pinned to a patch version, as in rucc-real-corpus, so that a result can be
+# reproduced from the commit alone.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: -D warnings
+
+jobs:
+  quick:
+    name: format, lints and house style
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets
+      - name: prose style
+        run: ./scripts/style.sh
+      - name: shell scripts parse
+        run: for f in provision/*.sh scripts/*.sh; do bash -n "$f"; done
+
+  test:
+    name: test on ${{ matrix.name }}
+    needs: quick
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux x86-64
+            os: ubuntu-24.04
+          - name: linux arm64
+            os: ubuntu-24.04-arm
+          - name: macos arm64
+            os: macos-26
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: cargo test
+        run: cargo test --workspace
