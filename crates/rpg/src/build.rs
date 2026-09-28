@@ -170,21 +170,52 @@ pub struct CompileSummary {
 }
 
 /// The name a record is known by in a summary: its C input, or its output, or its first word.
-fn subject(record: &CompileRecord) -> String {
-    record
+///
+/// Meson names sources relative to the build directory, so a file of the cached tree comes out as
+/// `../../../home/pg/.cache/rpg/src/REL_18_6/src/backend/...`. The path is resolved against the
+/// call's directory and made relative to the first of `roots` it is under, which gives
+/// `src/backend/...` for a source and for a generated file alike.
+fn subject(record: &CompileRecord, roots: &[&Path]) -> String {
+    let path = record
         .inputs
         .iter()
         .find(|d| args::is_c_source(&d.path))
         .or_else(|| record.outputs.first())
-        .map_or_else(
-            || record.argv.get(1).cloned().unwrap_or_default(),
-            |d| d.path.clone(),
-        )
+        .map(|d| d.path.clone());
+    let Some(path) = path else {
+        return record.argv.get(1).cloned().unwrap_or_default();
+    };
+    let full = lexical(&Path::new(&record.cwd).join(&path));
+    roots
+        .iter()
+        .find_map(|root| full.strip_prefix(root).ok())
+        .map_or(path, |p| p.display().to_string())
+}
+
+/// Remove `.` and `..` from a path without asking the file system.
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Summarize a trace, counting calls that started at or after `built_from` as build calls.
+/// File names are given relative to the first of `roots` they fall under.
 #[must_use]
-pub fn summarize(records: &[CompileRecord], unreadable: usize, built_from: f64) -> CompileSummary {
+pub fn summarize(
+    records: &[CompileRecord],
+    unreadable: usize,
+    built_from: f64,
+    roots: &[&Path],
+) -> CompileSummary {
     let mut summary = CompileSummary {
         unreadable_lines: unreadable,
         ..CompileSummary::default()
@@ -196,7 +227,7 @@ pub fn summarize(records: &[CompileRecord], unreadable: usize, built_from: f64) 
         let peak = record.peak_rss_kb.unwrap_or(0);
         if peak > summary.peak_rss_kb {
             summary.peak_rss_kb = peak;
-            summary.peak_rss_file = Some(subject(record));
+            summary.peak_rss_file = Some(subject(record, roots));
         }
         if record.started < built_from {
             summary.probe_calls += 1;
@@ -208,12 +239,12 @@ pub fn summarize(records: &[CompileRecord], unreadable: usize, built_from: f64) 
         if !record.succeeded() {
             summary.build_failures += 1;
             if summary.first_failure.is_none() {
-                summary.first_failure = Some((subject(record), record.stderr.clone()));
+                summary.first_failure = Some((subject(record, roots), record.stderr.clone()));
             }
         }
         if record.inputs.iter().any(|d| args::is_c_source(&d.path)) {
             summary.build_compiles += 1;
-            compiles.push((subject(record), record.wall_seconds));
+            compiles.push((subject(record, roots), record.wall_seconds));
         }
         if let Some(twice) = &record.twice {
             checked = true;
@@ -428,7 +459,12 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
 
     let log_path = plan.out.join("compile.jsonl");
     let (records, unreadable) = read_log(&log_path).unwrap_or_default();
-    let compiles = summarize(&records, unreadable, build_started);
+    let compiles = summarize(
+        &records,
+        unreadable,
+        build_started,
+        &[&build_dir, &plan.source],
+    );
     let commands = compile_commands(&records, &|p| p.is_file());
     let commands_path = plan.out.join("compile_commands.json");
     std::fs::write(
@@ -521,7 +557,7 @@ mod tests {
     #[test]
     fn a_trace_is_split_into_probes_and_build_calls() {
         let (records, unreadable) = parse_log(TRACE);
-        let summary = summarize(&records, unreadable, 15.0);
+        let summary = summarize(&records, unreadable, 15.0, &[]);
         assert_eq!(summary.probe_calls, 1);
         assert_eq!(summary.probe_failures, 1);
         assert_eq!(summary.build_calls, 3);

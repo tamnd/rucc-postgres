@@ -36,7 +36,7 @@ pub fn parse_defines(text: &str) -> Defines {
 #[must_use]
 pub fn parse_meson_probes(text: &str) -> BTreeMap<String, String> {
     let line_re = Regex::new(
-        r"^((?:Checking|Has header|Header|Library|Compiler for C supports|Fetching value of define|Run-time dependency|Program|Dependency)\b.*?)\s*: (.*)$",
+        r"^((?:Checking|Has header|Header|Library|Compiler for C supports|Fetching value of define|Run-time dependency|Program|Dependency)\b.*):\s(.*)$",
     )
     .expect("probe pattern");
     let ansi = Regex::new(r"\x1b\[[0-9;]*m").expect("ansi pattern");
@@ -130,15 +130,14 @@ struct Side {
 
 impl Side {
     fn new(dir: &Path) -> Self {
-        let tree = if dir.join("build").join("src").is_dir() {
-            dir.join("build")
+        // Canonical, so that `.` is never what gets replaced in the files.
+        let out = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        let tree = if out.join("build").join("src").is_dir() {
+            out.join("build")
         } else {
-            dir.to_path_buf()
+            out.clone()
         };
-        Self {
-            out: dir.to_path_buf(),
-            tree,
-        }
+        Self { out, tree }
     }
 
     fn read(&self, relative: &str) -> Option<String> {
@@ -224,7 +223,7 @@ mod tests {
 
     #[test]
     fn meson_probe_lines_are_read() {
-        let text = "Checking for size of \"long\" : 8\nHas header \"xlocale.h\" : NO \nChecking for function \"strchrnul\" : YES (cached)\nCompiler for C supports arguments -Wmissing-prototypes: YES\nBuild targets in project: 12\n\x1b[1mLibrary m\x1b[0m found: YES\n";
+        let text = "Checking for size of \"long\" : 8\nHas header \"xlocale.h\" : NO \nChecking for function \"strchrnul\" : YES (cached)\nChecking if \"x86_64: popcntq instruction\" compiles: NO\nCompiler for C supports arguments -Wmissing-prototypes: YES\nBuild targets in project: 12\n\x1b[1mLibrary m\x1b[0m found: YES\n";
         let probes = parse_meson_probes(text);
         assert_eq!(probes["Checking for size of \"long\""], "8");
         assert_eq!(probes["Has header \"xlocale.h\""], "NO");
@@ -234,7 +233,11 @@ mod tests {
             "YES"
         );
         assert_eq!(probes["Library m found"], "YES");
-        assert_eq!(probes.len(), 5);
+        assert_eq!(
+            probes["Checking if \"x86_64: popcntq instruction\" compiles"],
+            "NO"
+        );
+        assert_eq!(probes.len(), 6);
     }
 
     #[test]
