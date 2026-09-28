@@ -82,6 +82,52 @@ pub fn parse_regress(text: &str) -> RegressOutput {
     out
 }
 
+/// One `pg_regress` run out of several in one log.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Section {
+    /// The directory it ran in, relative to the top of the build tree, `contrib/amcheck`.
+    pub subdir: String,
+    /// What kind of run the makefile said it was, `regress`, `isolation` or `tap`.
+    pub kind: String,
+    /// What it printed.
+    pub output: RegressOutput,
+}
+
+/// Split the log of a `make check` that ran `pg_regress` many times, as it does under `contrib`
+/// and `src/test/modules`, and parse each run.
+///
+/// Postgres's makefiles print `# +++ regress check in contrib/amcheck +++` ahead of each run, and
+/// `isolation` or `tap` in place of `regress` for the other kinds (see `pg_regress_check` in
+/// `src/Makefile.global.in`). Each run numbers its tests from 1 and prints its own plan, so the
+/// lines between two markers are one run. Anything before the first marker is make talking.
+#[must_use]
+pub fn parse_sections(text: &str) -> Vec<Section> {
+    let mut sections: Vec<(String, String, String)> = Vec::new();
+    for line in text.lines() {
+        if let Some((kind, subdir)) = marker(line) {
+            sections.push((subdir.to_string(), kind.to_string(), String::new()));
+        } else if let Some((.., body)) = sections.last_mut() {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    sections
+        .into_iter()
+        .map(|(subdir, kind, body)| Section {
+            subdir,
+            kind,
+            output: parse_regress(&body),
+        })
+        .collect()
+}
+
+/// The kind and the directory of a `# +++ regress check in contrib/amcheck +++` line.
+fn marker(line: &str) -> Option<(&str, &str)> {
+    let inner = line.trim().strip_prefix("# +++ ")?.strip_suffix(" +++")?;
+    let (kind, subdir) = inner.split_once(" check in ")?;
+    Some((kind, subdir))
+}
+
 /// One `ok` or `not ok` line.
 fn parse_line(line: &str) -> Option<RegressResult> {
     let (ok, rest) = if let Some(rest) = line.strip_prefix("not ok ") {
@@ -201,6 +247,54 @@ ok 5         + select_into                              1207 ms
         let out =
             parse_regress("ok\nok 1 x name 3 ms\nok one - name 3 ms\nsomething ok 1 - x 1 ms\n");
         assert!(out.results.is_empty());
+    }
+
+    const SECTIONS: &str = "\
+make -C amcheck check
+make[1]: Entering directory '/b/contrib/amcheck'
+ok 99 - not a result, since no run has started
+# +++ regress check in contrib/amcheck +++
+# using temp instance on port 65312 with PID 2004
+ok 1         - check                                     120 ms
+ok 2         - check_btree                              2210 ms
+1..2
+# All 2 tests passed.
+# +++ isolation check in contrib/amcheck +++
+not ok 1     - read-write-unique                         900 ms
+1..1
+make[1]: Leaving directory '/b/contrib/amcheck'
+# +++ regress check in contrib/bloom +++
+# could not start postmaster
+Bail out!
+";
+
+    #[test]
+    fn a_log_of_many_runs_is_split_at_the_markers() {
+        let sections = parse_sections(SECTIONS);
+        assert_eq!(sections.len(), 3);
+        assert_eq!(sections[0].subdir, "contrib/amcheck");
+        assert_eq!(sections[0].kind, "regress");
+        assert_eq!(sections[0].output.passed(), 2);
+        assert_eq!(sections[0].output.planned, Some(2));
+        assert_eq!(sections[1].kind, "isolation");
+        assert_eq!(sections[1].output.failed(), 1);
+        assert_eq!(sections[1].output.results[0].name, "read-write-unique");
+        assert_eq!(sections[2].subdir, "contrib/bloom");
+        assert!(sections[2].output.results.is_empty());
+        assert_eq!(
+            sections[2].output.bailed.as_deref(),
+            Some("could not start postmaster")
+        );
+    }
+
+    #[test]
+    fn a_line_that_only_looks_like_a_marker_is_not_one() {
+        assert!(marker("# +++ regress check in contrib/amcheck").is_none());
+        assert!(marker("# +++ regress in contrib/amcheck +++").is_none());
+        assert_eq!(
+            marker("  # +++ tap check in src/test/modules/test_misc +++"),
+            Some(("tap", "src/test/modules/test_misc"))
+        );
     }
 
     const TESTLOG: &str = r#"{"name": "postgresql:setup / tmp_install", "stdout": "", "result": "OK", "starttime": 1790000000.0, "duration": 3.5, "returncode": 0, "env": {}, "command": ["meson", "install"], "suite": ["postgresql:setup"], "is_parallel": false}

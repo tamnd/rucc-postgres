@@ -1,15 +1,17 @@
 //! `rpg test`: run a suite against a finished build and write one record per test.
 //!
-//! Only the main regression suite for now, which is what PG0 asks for. Under meson it is
-//! `meson test --suite setup` followed by `meson test --suite regress`, as upstream's CI does it.
-//! Under autoconf it is `make check`. Either way the per test results come from `pg_regress`'s own
-//! `regression.out`, and the logs and diffs of every run are copied out of the build tree into
+//! The suites are the ones PG2 grades: `regress`, `isolation`, `ecpg`, and the `pg_regress` runs of
+//! `contrib` and `src/test/modules`. Under meson it is `meson test --suite setup` followed by
+//! `meson test --suite <suite>`, as upstream's CI does it, for the three that are one run each.
+//! Under autoconf it is `make check` for the main suite and `make -C <dir> check` for the others,
+//! with `-k` for the two that are a run per module. The per test results come from `pg_regress`'s
+//! own output, and the logs and diffs of every run are copied out of the build tree into
 //! `results/<suite>/run-<n>/`, because the next run overwrites them.
 
 use crate::build::{BuildInfo, Phase, environment, round};
 use crate::process::Step;
 use crate::records::{FailClass, Outcome, TestRecord};
-use crate::regress::{RegressOutput, parse_regress, parse_testlog};
+use crate::regress::{RegressOutput, parse_regress, parse_sections, parse_testlog};
 use crate::settings::System;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -79,13 +81,42 @@ impl Sets {
 }
 
 /// The suites `rpg test` knows how to run.
-pub const SUITES: &[&str] = &["regress"];
+pub const SUITES: &[&str] = &["regress", "isolation", "ecpg", "contrib", "modules"];
 
-/// Where `pg_regress` writes for the main suite, relative to the Postgres build tree.
-fn regress_dir(system: System) -> &'static str {
-    match system {
-        System::Meson => "testrun/regress/regress",
-        System::Autoconf => "src/test/regress",
+/// Where a suite lives in the Postgres build tree under autoconf, which is where its `make check`
+/// runs.
+fn suite_dir(suite: &str) -> &'static str {
+    match suite {
+        "isolation" => "src/test/isolation",
+        "ecpg" => "src/interfaces/ecpg",
+        "contrib" => "contrib",
+        "modules" => "src/test/modules",
+        _ => "src/test/regress",
+    }
+}
+
+/// Whether a suite is one `pg_regress` run for each module in it rather than one run.
+fn per_module(suite: &str) -> bool {
+    matches!(suite, "contrib" | "modules")
+}
+
+/// Where `pg_regress` writes for a suite that is one run, relative to the Postgres build tree.
+fn regress_dir(system: System, suite: &str) -> String {
+    match (system, suite) {
+        (System::Meson, suite) => format!("testrun/{suite}/{suite}"),
+        (System::Autoconf, "isolation") => "src/test/isolation/output_iso".to_string(),
+        (System::Autoconf, "ecpg") => "src/interfaces/ecpg/test".to_string(),
+        (System::Autoconf, _) => "src/test/regress".to_string(),
+    }
+}
+
+/// Where one run of a per module suite wrote, relative to the Postgres build tree. An isolation
+/// run keeps its output apart from the regress run in the same module.
+fn section_dir(subdir: &str, kind: &str) -> String {
+    if kind == "isolation" {
+        format!("{subdir}/output_iso")
+    } else {
+        subdir.to_string()
     }
 }
 
@@ -102,6 +133,11 @@ fn refuse_root() -> Result<(), String> {
     Ok(())
 }
 
+/// Whether a server log says a backend died of a signal.
+fn crashed_in(log: &Path) -> bool {
+    std::fs::read_to_string(log).is_ok_and(|text| text.contains("terminated by signal"))
+}
+
 /// Run the suite.
 #[allow(clippy::too_many_lines)]
 pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
@@ -113,6 +149,12 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
         ));
     }
     let system = System::parse(&plan.info.system)?;
+    if system == System::Meson && per_module(&plan.suite) {
+        return Err(format!(
+            "rpg test runs {} under autoconf only so far, since meson gives each module a suite of its own",
+            plan.suite
+        ));
+    }
     let build_dir = PathBuf::from(&plan.info.build_dir);
     let artifacts = plan
         .out
@@ -135,13 +177,14 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
         "PG_TEST_TIMEOUT_DEFAULT".to_string(),
         plan.timeout.to_string(),
     );
-    let pg_dir = build_dir.join(regress_dir(system));
+    let pg_dir = build_dir.join(regress_dir(system, &plan.suite));
     for stale in ["regression.out", "regression.diffs"] {
         std::fs::remove_file(pg_dir.join(stale)).ok();
     }
     let log = |name: &str| plan.out.join(format!("test-{}-{name}.log", plan.suite));
     let mut seconds = 0.0;
     let mut meson_result = None;
+    let mut make_failed = false;
     match system {
         System::Meson => {
             let mut setup = Step::new(
@@ -175,41 +218,63 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
                 .find(|t| t.short_name() == format!("{0}/{0}", plan.suite));
         }
         System::Autoconf => {
-            let mut step = Step::new("make check", "make", &build_dir, &log("run"))
-                .args(["check"])
+            // The main suite is the top level `make check`, as it always was here. The others run
+            // in their own directory, and `-k` lets one module that fails leave the rest to run.
+            let dir = suite_dir(&plan.suite);
+            let mut args = Vec::new();
+            if per_module(&plan.suite) {
+                args.push("-k");
+            }
+            if plan.suite != "regress" {
+                args.extend(["-C", dir]);
+            }
+            args.push("check");
+            let label = format!("make {}", args.join(" "));
+            let mut step = Step::new(&label, "make", &build_dir, &log("run"))
+                .args(args)
                 .envs(&env);
             step.unset.clone_from(&unset);
-            seconds += step.run()?.seconds;
+            let done = step.run()?;
+            seconds += done.seconds;
+            make_failed = !done.ok;
         }
     }
 
     std::fs::create_dir_all(&artifacts)
         .map_err(|e| format!("creating {}: {e}", artifacts.display()))?;
-    for (from, to) in [
-        ("regression.diffs", "regression.diffs"),
-        ("log/postmaster.log", "postmaster.log"),
-        ("log/initdb.log", "initdb.log"),
-    ] {
-        std::fs::copy(pg_dir.join(from), artifacts.join(to)).ok();
-    }
-    // pg_regress deletes regression.out when nothing failed. The same lines are in meson's
-    // testlog.json, and under make in the log of make check itself, which parse_regress reads
-    // past the make noise of.
-    let text = std::fs::read_to_string(pg_dir.join("regression.out"))
-        .ok()
-        .or_else(|| meson_result.as_ref().and_then(|t| t.stdout.clone()))
-        .or_else(|| std::fs::read_to_string(log("run")).ok())
-        .unwrap_or_default();
-    std::fs::write(artifacts.join("regression.out"), &text).ok();
-    let output = parse_regress(&text);
-    let postmaster = std::fs::read_to_string(pg_dir.join("log/postmaster.log")).unwrap_or_default();
-    let crashed = postmaster.contains("terminated by signal");
+    let (output, crashed) = if per_module(&plan.suite) {
+        modules(plan, &build_dir, &log("run"), &artifacts)
+    } else {
+        for (from, to) in [
+            ("regression.diffs", "regression.diffs"),
+            ("log/postmaster.log", "postmaster.log"),
+            ("log/initdb.log", "initdb.log"),
+        ] {
+            std::fs::copy(pg_dir.join(from), artifacts.join(to)).ok();
+        }
+        // pg_regress deletes regression.out when nothing failed. The same lines are in meson's
+        // testlog.json, and under make in the log of make check itself, which parse_regress reads
+        // past the make noise of.
+        let text = std::fs::read_to_string(pg_dir.join("regression.out"))
+            .ok()
+            .or_else(|| meson_result.as_ref().and_then(|t| t.stdout.clone()))
+            .or_else(|| std::fs::read_to_string(log("run")).ok())
+            .unwrap_or_default();
+        std::fs::write(artifacts.join("regression.out"), &text).ok();
+        let output = parse_regress(&text);
+        let crashed: BTreeSet<String> = if crashed_in(&pg_dir.join("log/postmaster.log")) {
+            output.results.iter().map(|r| r.name.clone()).collect()
+        } else {
+            BTreeSet::new()
+        };
+        (output, crashed)
+    };
 
     let mut records: Vec<TestRecord> = output
         .results
         .iter()
         .map(|r| {
-            let (outcome, class) = match (r.ok, crashed) {
+            let (outcome, class) = match (r.ok, crashed.contains(&r.name)) {
                 (true, _) => (Outcome::Passed, None),
                 (false, true) => (Outcome::Crashed, None),
                 (false, false) => (Outcome::Failed, Some(FailClass::Diff)),
@@ -225,7 +290,8 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
         || timed_out
         || meson_result
             .as_ref()
-            .is_some_and(|t| !t.ok() && output.failed() == 0);
+            .is_some_and(|t| !t.ok() && output.failed() == 0)
+        || (make_failed && output.failed() == 0);
     if incomplete {
         let outcome = if timed_out {
             Outcome::Timeout
@@ -246,6 +312,70 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
         seconds: round(seconds),
         output,
     })
+}
+
+/// Read the runs of a per module suite out of the log of its `make check`, as one output whose
+/// tests are named for their module, `amcheck/check_btree`, with the run's kind in between for a
+/// run that is not a plain regress run, `amcheck/isolation/read-write-unique`. Also copies each
+/// failing run's diffs and server log, and says which tests failed in a run whose server crashed.
+fn modules(
+    plan: &SuitePlan,
+    build_dir: &Path,
+    log: &Path,
+    artifacts: &Path,
+) -> (RegressOutput, BTreeSet<String>) {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    std::fs::write(artifacts.join("check.log"), &text).ok();
+    let top = format!("{}/", suite_dir(&plan.suite));
+    let mut output = RegressOutput {
+        planned: Some(0),
+        ..RegressOutput::default()
+    };
+    let mut crashed = BTreeSet::new();
+    for section in parse_sections(&text) {
+        if section.kind == "tap" {
+            continue;
+        }
+        let module = section.subdir.strip_prefix(&top).unwrap_or(&section.subdir);
+        let prefix = if section.kind == "regress" {
+            module.to_string()
+        } else {
+            format!("{module}/{}", section.kind)
+        };
+        let dir = build_dir.join(section_dir(&section.subdir, &section.kind));
+        let died = crashed_in(&dir.join("log/postmaster.log"));
+        if section.output.failed() > 0 || section.output.bailed.is_some() {
+            let name = prefix.replace('/', "-");
+            std::fs::copy(
+                dir.join("regression.diffs"),
+                artifacts.join(format!("{name}.diffs")),
+            )
+            .ok();
+            std::fs::copy(
+                dir.join("log/postmaster.log"),
+                artifacts.join(format!("{name}.postmaster.log")),
+            )
+            .ok();
+        }
+        output.planned = match (output.planned, section.output.planned) {
+            (Some(sum), Some(n)) => Some(sum + n),
+            _ => None,
+        };
+        if output.bailed.is_none() {
+            output.bailed = section
+                .output
+                .bailed
+                .map(|reason| format!("{prefix}: {reason}"));
+        }
+        for mut result in section.output.results {
+            result.name = format!("{prefix}/{}", result.name);
+            if died {
+                crashed.insert(result.name.clone());
+            }
+            output.results.push(result);
+        }
+    }
+    (output, crashed)
 }
 
 fn record(
@@ -295,6 +425,23 @@ fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_suite_runs_and_writes_where_its_makefile_does() {
+        assert_eq!(suite_dir("regress"), "src/test/regress");
+        assert_eq!(suite_dir("modules"), "src/test/modules");
+        assert!(per_module("contrib") && !per_module("isolation"));
+        assert_eq!(
+            regress_dir(System::Autoconf, "isolation"),
+            "src/test/isolation/output_iso"
+        );
+        assert_eq!(regress_dir(System::Meson, "ecpg"), "testrun/ecpg/ecpg");
+        assert_eq!(
+            section_dir("contrib/amcheck", "isolation"),
+            "contrib/amcheck/output_iso"
+        );
+        assert_eq!(section_dir("contrib/amcheck", "regress"), "contrib/amcheck");
+    }
 
     #[test]
     fn the_baseline_verdict_comes_from_whichever_set_holds_the_test() {
