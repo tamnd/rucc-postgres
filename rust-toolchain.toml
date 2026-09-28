@@ -1,0 +1,9 @@
+# The compiler this repository is built with, stated rather than inherited.
+#
+# The same pin as rucc-real-corpus, so that the two harnesses agree about what a warning is, and
+# so that a runner image shipping a different Rust cannot turn yesterday's green run red.
+
+[toolchain]
+channel = "1.98"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

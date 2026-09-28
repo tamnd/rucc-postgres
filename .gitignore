@@ -1,0 +1,4 @@
+target/
+# Build trees and scratch output from local runs. Everything under it can be made again from
+# pins.toml and a compiler, so none of it belongs in the history.
+work/
