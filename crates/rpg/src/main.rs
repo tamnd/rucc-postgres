@@ -1,5 +1,6 @@
 //! The `rpg` command line.
 
+mod baseline;
 mod build;
 mod compiler;
 mod pins;
@@ -8,5 +9,6 @@ mod records;
 mod regress;
 mod repo;
 mod settings;
+mod suite;
 
 fn main() {}
