@@ -1,0 +1,38 @@
+# The four rows of the design, document 09. A row is a platform and the reference compiler that
+# grades it, not a single machine: the machines are listed in order of preference, and a baseline
+# records which one it actually ran on.
+#
+# `test-timeout` is `PG_TEST_TIMEOUT_DEFAULT` for `-O2` runs, from document 10.5. `-O0` runs get
+# twice as long, because a slow server is a performance fact and not a correctness failure.
+
+[[row]]
+name = "L64"
+description = "Linux x86-64"
+machines = ["server3", "server2", "server1", "ubuntu-24.04 runner"]
+reference = "gcc-16"
+build-system = "autoconf"
+test-timeout = 180
+
+[[row]]
+name = "LA64"
+description = "Linux AArch64"
+machines = ["ubuntu-24.04-arm runner"]
+reference = "gcc-16"
+build-system = "autoconf"
+test-timeout = 300
+
+[[row]]
+name = "M64"
+description = "macOS arm64"
+machines = ["this laptop", "macos-15 runner"]
+reference = "clang"
+build-system = "autoconf"
+test-timeout = 180
+
+[[row]]
+name = "W64"
+description = "Windows x86-64, MSYS2 UCRT64"
+machines = ["gamingpc", "windows-2022 runner"]
+reference = "gcc"
+build-system = "meson"
+test-timeout = 300

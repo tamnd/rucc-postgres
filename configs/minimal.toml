@@ -1,0 +1,45 @@
+# The minimal configuration of the design, document 05.6, used from PG1 to PG6.
+#
+# No ICU, readline, zlib, LLVM, NLS or SSL, TAP tests on, assertions off, debug information on.
+# The same options go to the reference build and the rucc build. Every entry is a documented
+# option of Postgres's build systems, and the loader refuses anything that is not an option.
+#
+# Meson's feature options default to `auto`, which turns a library on whenever the machine happens
+# to have it installed. `auto_features=disabled` turns every one of them off unless named here, so
+# the build does not depend on what else is on the machine. Autoconf's defaults are already off
+# for everything except ICU, readline and zlib, which are turned off by name.
+#
+# The optimization level is not an option here. `rpg build --level` sets it, through `CFLAGS` for
+# configure and through `-Doptimization` for meson, so that one configuration serves both levels.
+
+name = "minimal"
+
+[autoconf]
+options = [
+    "--without-icu",
+    "--without-readline",
+    "--without-zlib",
+    "--without-llvm",
+    "--disable-nls",
+    "--enable-tap-tests",
+    "--disable-cassert",
+    "--enable-debug",
+]
+
+[meson]
+options = [
+    "-Dauto_features=disabled",
+    "-Dicu=disabled",
+    "-Dreadline=disabled",
+    "-Dzlib=disabled",
+    "-Dssl=none",
+    "-Dnls=disabled",
+    "-Dlz4=disabled",
+    "-Dzstd=disabled",
+    "-Dlibxml=disabled",
+    "-Dllvm=disabled",
+    "-Duuid=none",
+    "-Dtap_tests=enabled",
+    "-Dcassert=false",
+    "-Ddebug=true",
+]
