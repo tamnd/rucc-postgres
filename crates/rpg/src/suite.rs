@@ -186,16 +186,21 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
     std::fs::create_dir_all(&artifacts)
         .map_err(|e| format!("creating {}: {e}", artifacts.display()))?;
     for (from, to) in [
-        ("regression.out", "regression.out"),
         ("regression.diffs", "regression.diffs"),
         ("log/postmaster.log", "postmaster.log"),
+        ("log/initdb.log", "initdb.log"),
     ] {
         std::fs::copy(pg_dir.join(from), artifacts.join(to)).ok();
     }
+    // pg_regress deletes regression.out when nothing failed. The same lines are in meson's
+    // testlog.json, and under make in the log of make check itself, which parse_regress reads
+    // past the make noise of.
     let text = std::fs::read_to_string(pg_dir.join("regression.out"))
         .ok()
         .or_else(|| meson_result.as_ref().and_then(|t| t.stdout.clone()))
+        .or_else(|| std::fs::read_to_string(log("run")).ok())
         .unwrap_or_default();
+    std::fs::write(artifacts.join("regression.out"), &text).ok();
     let output = parse_regress(&text);
     let postmaster = std::fs::read_to_string(pg_dir.join("log/postmaster.log")).unwrap_or_default();
     let crashed = postmaster.contains("terminated by signal");
