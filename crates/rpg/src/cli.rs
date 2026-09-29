@@ -17,14 +17,22 @@ pub struct Args {
 }
 
 /// Options that take no value.
-const SWITCHES: &[&str] = &["twice", "no-upstream-check", "help"];
+const SWITCHES: &[&str] = &["twice", "configure-only", "no-upstream-check", "help"];
 
 /// Options each command accepts.
 fn accepted(command: &str) -> Option<&'static [&'static str]> {
     Some(match command {
         "fetch" => &["pin", "no-upstream-check"],
         "build" => &[
-            "cc", "level", "system", "config", "out", "pin", "jobs", "twice",
+            "cc",
+            "level",
+            "system",
+            "config",
+            "out",
+            "pin",
+            "jobs",
+            "twice",
+            "configure-only",
         ],
         "test" => &["suite", "out", "row", "records", "run", "timeout"],
         "baseline" => &[
@@ -50,7 +58,7 @@ rpg: build and test the pinned Postgres tree with rucc and with a reference comp
 usage:
   rpg fetch [--pin NAME] [--no-upstream-check]
   rpg build --cc PATH [--level -O0|-O2] [--system meson|autoconf] [--config minimal]
-            [--out DIR] [--pin NAME] [--jobs N] [--twice]
+            [--out DIR] [--pin NAME] [--jobs N] [--twice] [--configure-only]
   rpg test [--suite regress|isolation|ecpg|contrib|modules|world] [--out DIR] [--row ROW]
            [--records FILE] [--run N] [--timeout S]
   rpg baseline --row ROW [--runs 3] [--system S] [--level L] [--cc PATH] [--config C] [--pin P]

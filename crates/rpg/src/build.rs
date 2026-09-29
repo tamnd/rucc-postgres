@@ -41,6 +41,8 @@ pub struct Plan {
     pub jobs: usize,
     /// Compile every translation unit twice and compare.
     pub twice: bool,
+    /// Stop after configure, for comparing what two compilers answered to the probes.
+    pub configure_only: bool,
 }
 
 /// The default build directory for a combination, under `work/`.
@@ -70,6 +72,8 @@ pub enum Phase {
     ConfigureFailed,
     /// Configured, and the build did not finish.
     BuildFailed,
+    /// Configured, and no build was asked for.
+    Configured,
     /// Built.
     Built,
 }
@@ -441,7 +445,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
 
     let mut built: Option<Finished> = None;
     let build_started = now();
-    if configured.ok {
+    if configured.ok && !plan.configure_only {
         let mut step = match plan.system {
             System::Meson => Step::new("ninja", "ninja", &plan.out, &build_log).args([
                 "-C".to_string(),
@@ -475,6 +479,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
 
     let phase = match (&configured, &built) {
         (c, _) if !c.ok => Phase::ConfigureFailed,
+        (_, None) if plan.configure_only => Phase::Configured,
         (_, Some(b)) if b.ok => Phase::Built,
         _ => Phase::BuildFailed,
     };
@@ -487,7 +492,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
             .as_ref()
             .map(|(file, stderr)| format!("{file}: {}", stderr.lines().next().unwrap_or_default()))
             .or_else(|| first_error(&build_log)),
-        Phase::Built => None,
+        Phase::Built | Phase::Configured => None,
     };
 
     let info = BuildInfo {

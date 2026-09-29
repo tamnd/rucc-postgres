@@ -134,6 +134,7 @@ fn plan(
         out,
         jobs: args.number("jobs", process::cores())?,
         twice: args.has("twice"),
+        configure_only: args.has("configure-only"),
     })
 }
 
@@ -178,11 +179,13 @@ fn build_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let plan = plan(repo, args, args.need("cc")?, &choice, args.get("out"))?;
     let info = build::build(&plan)?;
     print_build(&info, &plan.out);
-    Ok(if info.phase == build::Phase::Built {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    Ok(
+        if matches!(info.phase, build::Phase::Built | build::Phase::Configured) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        },
+    )
 }
 
 /// The build directory to test: `--out`, or the only one under `work/`.

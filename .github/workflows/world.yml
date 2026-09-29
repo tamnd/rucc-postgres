@@ -26,6 +26,8 @@ on:
       - crates/rpg/src/pins.rs
       - crates/rpg/src/cross.rs
       - crates/rpg/src/stress.rs
+      - crates/rpg/src/configdiff.rs
+      - config-divergences.toml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -297,4 +299,75 @@ jobs:
             ${{ runner.temp }}/pg/stress/
             ${{ runner.temp }}/pg/records.jsonl
             ${{ runner.temp }}/pg/build.log
+          if-no-files-found: ignore
+
+  # The first box of PG3's rucc list: a probe rucc answers differently from gcc under meson, the
+  # way PG1 checked autoconf. Configure alone with each compiler, then compare what they decided.
+  probes:
+    name: probes under ${{ matrix.system }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [autoconf, meson]
+    timeout-minutes: 30
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what configure needs
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex gcc-14
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      # gcc-14 rather than the runner's gcc 13, which does not have -Wmissing-variable-declarations
+      # and so answers that probe differently from rucc and from the gcc-16 of the L64 row.
+      - name: configure with gcc and with rucc
+        run: |
+          for cc in gcc-14 "$RUCC"; do
+            ./target/release/rpg build --pin "$PIN" --cc "$cc" --system ${{ matrix.system }} --config minimal \
+              --out "$RUNNER_TEMP/$(basename "$cc")" --configure-only
+          done
+      - name: rpg config-diff
+        run: |
+          set -o pipefail
+          ./target/release/rpg config-diff --a "$RUNNER_TEMP/gcc-14" --b "$RUNNER_TEMP/rucc" | tee "$RUNNER_TEMP/diff.txt"
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### $PIN probes under ${{ matrix.system }}, gcc-14 against rucc $RUCC_VERSION"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/diff.txt" 2>/dev/null || echo "rpg config-diff did not run"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-probes-${{ env.PIN }}-${{ matrix.system }}
+          path: |
+            ${{ runner.temp }}/gcc-14/configure.log
+            ${{ runner.temp }}/rucc/configure.log
+            ${{ runner.temp }}/gcc-14/build/meson-logs/meson-log.txt
+            ${{ runner.temp }}/rucc/build/meson-logs/meson-log.txt
+            ${{ runner.temp }}/gcc-14/build/src/include/pg_config.h
+            ${{ runner.temp }}/rucc/build/src/include/pg_config.h
           if-no-files-found: ignore
