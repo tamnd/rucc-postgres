@@ -9,7 +9,7 @@
 //! failed assertion, or else the line saying which signal the backend died of. Otherwise it is the
 //! first line the test printed that it should not have, or the first it should have printed and
 //! did not, from the test's piece of the diffs. A TAP script's is the first crash in its log, or
-//! else its first failed test. Numbers become `N` in all of them, so that an OID or a PID does not
+//! else its first failed test. Numbers become `N` and addresses `<addr>` in all of them, so that an OID or a PID does not
 //! split a group.
 //!
 //! Core files are the other half. Each one is given to `gdb` with the executable it came from, the
@@ -86,7 +86,7 @@ const LONGEST: usize = 160;
 #[must_use]
 pub fn normalize(line: &str) -> String {
     let line = LOG_PREFIX.replace(line.trim(), "");
-    let line = HEX.replace_all(&line, "0xN");
+    let line = HEX.replace_all(&line, "<addr>");
     let line = DIGITS.replace_all(&line, "N");
     let line = SPACE.replace_all(line.trim(), " ");
     line.chars().take(LONGEST).collect()
@@ -363,7 +363,7 @@ mod tests {
             ),
             "LOG: server process (PID N) was terminated by signal N: Segmentation fault"
         );
-        assert_eq!(normalize("  at 0x7ffc1234   here "), "at 0xN here");
+        assert_eq!(normalize("  at 0x7ffc1234   here "), "at <addr> here");
     }
 
     #[test]
