@@ -1,0 +1,82 @@
+# What each night's world run got, kept in git. When a scheduled or hand started world run
+# finishes, its rows are read back from the artifacts, a night file per row goes to runs/, the
+# report at reports/nightly.md is rewritten, and both are committed to main. A row that got
+# worse since its last night opens an issue. It goes to tamnd/rucc when the RUCC_ISSUES secret
+# holds a token that can open issues there, and to this repository otherwise.
+name: nightly
+
+on:
+  workflow_run:
+    workflows: [world]
+    types: [completed]
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: write
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  record:
+    name: record the night
+    if: github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      - uses: Swatinem/rust-cache@v2.9.2
+      - run: cargo build --release -p rpg
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          pattern: rpg-world-*
+          path: ${{ runner.temp }}/nights
+      - name: rpg nightly
+        run: |
+          ./target/release/rpg nightly --nights "$RUNNER_TEMP/nights" --issue "$RUNNER_TEMP/issue.md" \
+            --run-url "${{ github.event.workflow_run.html_url }}" | tee "$RUNNER_TEMP/nightly.txt"
+          {
+            echo "### The night"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/nightly.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: commit the night
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runs reports
+          if git diff --cached --quiet; then
+            echo "nothing new to keep"
+            exit 0
+          fi
+          git commit -q -m "Record the night of $(date -u +%F)"
+          for attempt in 1 2 3; do
+            git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0
+            sleep $((attempt * 10))
+          done
+          exit 1
+      - name: open an issue for a regression
+        env:
+          RUCC_ISSUES: ${{ secrets.RUCC_ISSUES }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -f "$RUNNER_TEMP/issue.md" ] || { echo "nothing regressed"; exit 0; }
+          head -n 1 "$RUNNER_TEMP/issue.md" > "$RUNNER_TEMP/title.txt"
+          tail -n +2 "$RUNNER_TEMP/issue.md" > "$RUNNER_TEMP/body.md"
+          if [ -n "$RUCC_ISSUES" ]; then
+            GH_TOKEN="$RUCC_ISSUES" gh issue create -R tamnd/rucc --title "$(cat "$RUNNER_TEMP/title.txt")" --body-file "$RUNNER_TEMP/body.md"
+          else
+            GH_TOKEN="$GITHUB_TOKEN" gh issue create -R "$GITHUB_REPOSITORY" --title "$(cat "$RUNNER_TEMP/title.txt")" --body-file "$RUNNER_TEMP/body.md"
+          fi

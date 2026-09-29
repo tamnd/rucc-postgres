@@ -56,6 +56,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "mixed" => &[
             "gcc", "rucc", "suite", "check", "under", "out", "timeout", "no-fuel",
         ],
+        "nightly" => &["nights", "runs", "reports", "issue", "run-url"],
         "help" => &[],
         _ => return None,
     })
@@ -81,6 +82,7 @@ usage:
   rpg triage [--out DIR] [--cores DIR]
   rpg mixed --gcc DIR --rucc DIR [--suite S | --check CMD] [--under PREFIX,...] [--out DIR]
             [--timeout S] [--no-fuel]
+  rpg nightly --nights DIR [--runs DIR] [--reports DIR] [--issue FILE] [--run-url URL]
   rpg stress [--out DIR] [--row ROW] [--minutes 5] [--clients N] [--scale 10] [--records FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked

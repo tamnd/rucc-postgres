@@ -10,6 +10,7 @@ mod cross;
 mod demands;
 mod frames;
 mod mixed;
+mod nightly;
 mod pins;
 mod process;
 mod records;
@@ -50,6 +51,7 @@ fn main() -> ExitCode {
             "stress" => stress_command(&repo, &args),
             "triage" => triage_command(&repo, &args),
             "mixed" => mixed_command(&args),
+            "nightly" => nightly_command(&repo, &args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -499,10 +501,11 @@ fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     std::fs::write(&path, triage::report(&found))
         .map_err(|e| format!("writing {}: {e}", path.display()))?;
     println!(
-        "triage: {} failures in {} groups, {} core files, {} cores unread",
+        "triage: {} failures in {} groups, {} core files, {} from SIGQUIT left out, {} cores unread",
         found.failures(),
         found.groups.len(),
         found.cores,
+        found.quit.len(),
         found.unread.len()
     );
     for (signature, failures) in found.sorted().iter().take(10) {
@@ -563,6 +566,41 @@ fn mixed_command(args: &Args) -> Result<ExitCode, String> {
     }
     println!("trials:    {}", run.trials.len());
     println!("report:    {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn nightly_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let runs = args
+        .get("runs")
+        .map_or_else(|| repo.root.join("runs"), PathBuf::from);
+    let reports = args
+        .get("reports")
+        .map_or_else(|| repo.root.join("reports"), PathBuf::from);
+    let recorded = nightly::record(Path::new(args.need("nights")?), &runs, &reports)?;
+    for (name, (night, change)) in &recorded.changes {
+        println!(
+            "{name}: {} with {}, {} worse and {} better since {}{}",
+            night.date,
+            night.compiler,
+            change.regressed.len(),
+            change.fixed.len(),
+            change.since.as_deref().unwrap_or("nothing"),
+            if change.build {
+                ", and the build stopped"
+            } else {
+                ""
+            }
+        );
+    }
+    println!("regressions: {}", recorded.regressions());
+    if let (Some(path), Some((title, body))) = (
+        args.get("issue"),
+        nightly::issue(&recorded, args.get("run-url")),
+    ) {
+        std::fs::write(path, format!("{title}\n{body}"))
+            .map_err(|e| format!("writing {path}: {e}"))?;
+        println!("issue:       {path}");
+    }
     Ok(ExitCode::SUCCESS)
 }
 

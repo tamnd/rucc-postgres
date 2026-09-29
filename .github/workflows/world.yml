@@ -29,6 +29,7 @@ on:
       - crates/rpg/src/triage.rs
       - crates/rpg/src/mixed.rs
       - crates/rpg/src/configdiff.rs
+      - crates/rpg/src/frames.rs
       - config-divergences.toml
 
 concurrency:
@@ -124,6 +125,7 @@ jobs:
             ${{ runner.temp }}/pg/triage.md
             ${{ runner.temp }}/pg/triage/
             ${{ runner.temp }}/pg/records.jsonl
+            ${{ runner.temp }}/pg/build.json
             ${{ runner.temp }}/pg/test-world-run.log
             ${{ runner.temp }}/pg/build.log
             ${{ runner.temp }}/pg/build/meson-logs/testlog.json
@@ -469,4 +471,70 @@ jobs:
             ${{ runner.temp }}/rucc/build/meson-logs/meson-log.txt
             ${{ runner.temp }}/gcc-14/build/src/include/pg_config.h
             ${{ runner.temp }}/rucc/build/src/include/pg_config.h
+          if-no-files-found: ignore
+
+  # PG2's second criterion: no server function with a frame more than twice gcc's at -O2, or more
+  # than four times gcc's -O2 frame at -O0. rpg frames measures both against one gcc -O2 build and
+  # the summary shows how many functions are over each bound. It is a measurement, so the job
+  # fails only when a build or the measuring does.
+  frames:
+    name: frames against gcc-14 -O2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what configure checks for
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl gcc-14
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: build with gcc-14 at -O2 and rucc at -O2 and -O0
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+          ./target/release/rpg build --pin "$PIN" --cc gcc-14 --level -O2 --system autoconf --config minimal \
+            --out "$RUNNER_TEMP/gcc-O2" --jobs "$(nproc)"
+          for level in -O2 -O0; do
+            ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level $level --system autoconf --config minimal \
+              --out "$RUNNER_TEMP/rucc$level" --jobs "$(nproc)"
+          done
+      - name: rpg frames
+        run: |
+          for level in -O2 -O0; do
+            ./target/release/rpg frames --a "$RUNNER_TEMP/gcc-O2" --b "$RUNNER_TEMP/rucc$level" \
+              --out "$RUNNER_TEMP/frames/rucc$level.md"
+          done
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### $PIN stack frames, rucc $RUCC_VERSION against gcc-14 -O2"
+            echo
+            echo "The bounds are 2 times at -O2 and 4 times at -O0."
+            for level in -O2 -O0; do
+              echo
+              echo "#### rucc $level"
+              sed -n '/^## Ratio/,/^## The 50 largest ratios/p' "$RUNNER_TEMP/frames/rucc$level.md" | sed '1d;$d' || echo "no report"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-frames-${{ env.PIN }}
+          path: ${{ runner.temp }}/frames/
           if-no-files-found: ignore
