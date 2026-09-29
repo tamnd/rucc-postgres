@@ -93,7 +93,7 @@ jobs:
           echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
       - name: rpg fetch
         run: |
-          cargo build --release -p rpg
+          cargo build --release --workspace
           ./target/release/rpg fetch --pin REL_18_6 --no-upstream-check
       - name: rpg build
         id: build
