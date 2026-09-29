@@ -1,0 +1,97 @@
+# PG3's suite: `make check-world` with the TAP scripts, on the pinned Postgres built by a released
+# rucc at -O0 and -O2 with the minimal configuration, and with the PG_TEST_EXTRA the exit criterion
+# names. It takes too long for every pull request, so it runs each night, by hand, and on the pull
+# requests that change how the suite runs or is read.
+
+name: world
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      rucc:
+        description: rucc release to build with
+        default: "0.12.3"
+  pull_request:
+    paths:
+      - .github/workflows/world.yml
+      - crates/rpg/src/suite.rs
+      - crates/rpg/src/regress.rs
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  world:
+    name: check-world at ${{ matrix.level }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [-O0, -O2]
+    timeout-minutes: 240
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
+      PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what the tap tests and the build need
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin REL_18_6 --no-upstream-check
+      - name: rpg build
+        run: |
+          ./target/release/rpg build --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
+            --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
+      - name: rpg test --suite world
+        run: |
+          set -o pipefail
+          ./target/release/rpg test --suite world --out "$RUNNER_TEMP/pg" | tee "$RUNNER_TEMP/world.txt"
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### check-world at ${{ matrix.level }} with rucc $RUCC_VERSION"
+            echo
+            grep '^world:' "$RUNNER_TEMP/world.txt" || echo "rpg test did not get as far as a count"
+            echo
+            echo "Everything that did not pass:"
+            echo
+            jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
+              "$RUNNER_TEMP/pg/records.jsonl" 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the run
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-world${{ matrix.level }}
+          path: |
+            ${{ runner.temp }}/pg/results/
+            ${{ runner.temp }}/pg/records.jsonl
+            ${{ runner.temp }}/pg/test-world-run.log
+          if-no-files-found: ignore
