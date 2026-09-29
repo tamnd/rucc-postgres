@@ -320,7 +320,7 @@ jobs:
       - name: install what configure needs
         run: |
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
-          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex
+          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex gcc-14
       - name: install rucc
         run: |
           set -euo pipefail
@@ -336,21 +336,23 @@ jobs:
         run: |
           cargo build --release --workspace
           ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      # gcc-14 rather than the runner's gcc 13, which does not have -Wmissing-variable-declarations
+      # and so answers that probe differently from rucc and from the gcc-16 of the L64 row.
       - name: configure with gcc and with rucc
         run: |
-          for cc in gcc "$RUCC"; do
+          for cc in gcc-14 "$RUCC"; do
             ./target/release/rpg build --pin "$PIN" --cc "$cc" --system ${{ matrix.system }} --config minimal \
               --out "$RUNNER_TEMP/$(basename "$cc")" --configure-only
           done
       - name: rpg config-diff
         run: |
           set -o pipefail
-          ./target/release/rpg config-diff --a "$RUNNER_TEMP/gcc" --b "$RUNNER_TEMP/rucc" | tee "$RUNNER_TEMP/diff.txt"
+          ./target/release/rpg config-diff --a "$RUNNER_TEMP/gcc-14" --b "$RUNNER_TEMP/rucc" | tee "$RUNNER_TEMP/diff.txt"
       - name: summary
         if: always()
         run: |
           {
-            echo "### $PIN probes under ${{ matrix.system }}, gcc against rucc $RUCC_VERSION"
+            echo "### $PIN probes under ${{ matrix.system }}, gcc-14 against rucc $RUCC_VERSION"
             echo
             echo '```'
             cat "$RUNNER_TEMP/diff.txt" 2>/dev/null || echo "rpg config-diff did not run"
@@ -362,10 +364,10 @@ jobs:
         with:
           name: rpg-probes-${{ env.PIN }}-${{ matrix.system }}
           path: |
-            ${{ runner.temp }}/gcc/configure.log
+            ${{ runner.temp }}/gcc-14/configure.log
             ${{ runner.temp }}/rucc/configure.log
-            ${{ runner.temp }}/gcc/build/meson-logs/meson-log.txt
+            ${{ runner.temp }}/gcc-14/build/meson-logs/meson-log.txt
             ${{ runner.temp }}/rucc/build/meson-logs/meson-log.txt
-            ${{ runner.temp }}/gcc/build/src/include/pg_config.h
+            ${{ runner.temp }}/gcc-14/build/src/include/pg_config.h
             ${{ runner.temp }}/rucc/build/src/include/pg_config.h
           if-no-files-found: ignore
