@@ -257,9 +257,12 @@ fn bench(
     let name = format!("pgbench {protocol}");
     let log = format!("pgbench-{protocol}.log");
     let clients = plan.clients.max(1).to_string();
+    // Without `-n` pgbench truncates the history table before it starts, which would throw away
+    // what the first protocol wrote and leave the sums apart for no fault of the server's.
     let done = install
         .step(&name, "pgbench", &log)
         .args([
+            "-n",
             "-h",
             path_str(&install.socket)?,
             "-M",
