@@ -18,6 +18,7 @@ mod repro;
 mod settings;
 mod stress;
 mod suite;
+mod triage;
 
 use cli::Args;
 use compiler::Compiler;
@@ -46,6 +47,7 @@ fn main() -> ExitCode {
             "frames" => frames_command(&repo, &args),
             "cross-modules" => cross_command(&args),
             "stress" => stress_command(&repo, &args),
+            "triage" => triage_command(&repo, &args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -480,6 +482,31 @@ fn demands_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
         count(demands::Kind::PgAttribute)
     );
     println!("written:   {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Group what a run kept by cause. A measurement rather than a gate, so it exits 0 either way.
+fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let out = pick_out(repo, args)?;
+    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let cores = args
+        .get("cores")
+        .map_or_else(|| out.join("cores"), PathBuf::from);
+    let found = triage::triage(&out, &cores);
+    let path = out.join("triage.md");
+    std::fs::write(&path, triage::report(&found))
+        .map_err(|e| format!("writing {}: {e}", path.display()))?;
+    println!(
+        "triage: {} failures in {} groups, {} core files, {} cores unread",
+        found.failures(),
+        found.groups.len(),
+        found.cores,
+        found.unread.len()
+    );
+    for (signature, failures) in found.sorted().iter().take(10) {
+        println!("  {:>5}  {signature}", failures.len());
+    }
+    println!("report:    {}", path.display());
     Ok(ExitCode::SUCCESS)
 }
 

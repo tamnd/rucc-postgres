@@ -1,0 +1,501 @@
+//! `rpg triage`: what the failures of a run have in common.
+//!
+//! A compiler bug in one function the executor calls for every row fails a hundred regression
+//! tests at once, and read one diff at a time that looks like a hundred problems. This reads what
+//! `rpg test` kept under `results/` and puts each failure under a signature, the first thing that
+//! went wrong in it, so that the hundred show up as one group with a hundred names under it.
+//!
+//! A test's signature is the crash when the server it ran against crashed: the `TRAP:` line of a
+//! failed assertion, or else the line saying which signal the backend died of. Otherwise it is the
+//! first line the test printed that it should not have, or the first it should have printed and
+//! did not, from the test's piece of the diffs. A TAP script's is the first crash in its log, or
+//! else its first failed test. Numbers become `N` and addresses `<addr>` in all of them, so that
+//! an OID or a PID does not split a group.
+//!
+//! Core files are the other half. Each one is given to `gdb` with the executable it came from, the
+//! backtrace of every thread is written next to the report, and the core is grouped by the signal
+//! and the functions at the top of the crashing thread's stack.
+
+use regex::Regex;
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+/// One failure: which test, and the file its signature came from.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Failure {
+    /// The test, named as closely to the records as the file allows.
+    pub test: String,
+    /// The file, relative to the build directory.
+    pub file: String,
+}
+
+/// What the triage found.
+#[derive(Debug, Default)]
+pub struct Triage {
+    /// Signature to the failures under it.
+    pub groups: BTreeMap<String, Vec<Failure>>,
+    /// Core files that could not be read, with the reason.
+    pub unread: Vec<(String, String)>,
+    /// How many core files were read.
+    pub cores: usize,
+}
+
+impl Triage {
+    fn add(&mut self, signature: String, test: String, file: String) {
+        self.groups
+            .entry(signature)
+            .or_default()
+            .push(Failure { test, file });
+    }
+
+    /// How many failures there are over every group.
+    #[must_use]
+    pub fn failures(&self) -> usize {
+        self.groups.values().map(Vec::len).sum()
+    }
+
+    /// The groups, largest first.
+    #[must_use]
+    pub fn sorted(&self) -> Vec<(&String, &Vec<Failure>)> {
+        let mut groups: Vec<_> = self.groups.iter().collect();
+        groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(b.0)));
+        groups
+    }
+}
+
+static LOG_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d+)? \S+ \[\d+\] ").expect("a valid regex")
+});
+static HEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"0x[0-9a-fA-F]+").expect("a valid regex"));
+static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+").expect("a valid regex"));
+static SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("a valid regex"));
+static FRAME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^#\d+\s+(?:0x[0-9a-fA-F]+ in )?([^\s(]+) \(").expect("a valid regex")
+});
+static SIGNAL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"Program terminated with signal (\w+)").expect("a valid regex"));
+
+/// The longest a signature gets, in characters.
+const LONGEST: usize = 160;
+
+/// A line with what changes from run to run taken out: the server log's time and PID prefix,
+/// addresses and numbers, and runs of white space.
+#[must_use]
+pub fn normalize(line: &str) -> String {
+    let line = LOG_PREFIX.replace(line.trim(), "");
+    let line = HEX.replace_all(&line, "<addr>");
+    let line = DIGITS.replace_all(&line, "N");
+    let line = SPACE.replace_all(line.trim(), " ");
+    line.chars().take(LONGEST).collect()
+}
+
+/// The first crash a server log or a TAP log records: a failed assertion's `TRAP:` line, or else
+/// the line saying a process died of a signal.
+#[must_use]
+pub fn crash_line(log: &str) -> Option<String> {
+    log.lines()
+        .find(|l| l.contains("TRAP:"))
+        .or_else(|| log.lines().find(|l| l.contains("terminated by signal")))
+        .map(|l| format!("crash: {}", normalize(l)))
+}
+
+/// Each test's piece of a `regression.diffs`, as the test's name and the first line that differs.
+#[must_use]
+pub fn diff_chunks(text: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut current: Option<(String, Option<String>, Option<String>)> = None;
+    let finish = |c: (String, Option<String>, Option<String>), out: &mut Vec<(String, String)>| {
+        let signature =
+            c.1.or(c.2)
+                .unwrap_or_else(|| "a diff with no changed lines".to_string());
+        out.push((c.0, signature));
+    };
+    for line in text.lines() {
+        if line.starts_with("diff ") {
+            if let Some(c) = current.take() {
+                finish(c, &mut out);
+            }
+            let file = line.split_whitespace().last().unwrap_or_default();
+            let name = Path::new(file)
+                .file_stem()
+                .map_or_else(|| file.to_string(), |s| s.to_string_lossy().into_owned());
+            current = Some((name, None, None));
+            continue;
+        }
+        let Some(c) = current.as_mut() else { continue };
+        if line.starts_with("+++") || line.starts_with("---") || line.starts_with("@@") {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix('+') {
+            if c.1.is_none() && !rest.trim().is_empty() {
+                c.1 = Some(format!("+ {}", normalize(rest)));
+            }
+        } else if let Some(rest) = line.strip_prefix('-')
+            && c.2.is_none()
+            && !rest.trim().is_empty()
+        {
+            c.2 = Some(format!("- {}", normalize(rest)));
+        }
+    }
+    if let Some(c) = current {
+        finish(c, &mut out);
+    }
+    out
+}
+
+/// A TAP script's signature: the first crash in its log, or else its first failed test.
+#[must_use]
+pub fn tap_signature(log: &str) -> String {
+    crash_line(log)
+        .or_else(|| {
+            log.lines()
+                .find_map(|l| l.find("Failed test").map(|at| &l[at..]))
+                .map(normalize)
+        })
+        .or_else(|| {
+            log.lines()
+                .find(|l| l.contains("Tests were run but no plan") || l.contains("died"))
+                .map(normalize)
+        })
+        .unwrap_or_else(|| "a failed script whose log names no failed test".to_string())
+}
+
+/// The signature of a core from `gdb`'s backtrace: the signal and the first three functions of the
+/// thread that crashed, which `bt` prints before `thread apply all bt` prints every thread.
+#[must_use]
+pub fn core_signature(program: &str, backtrace: &str) -> String {
+    let signal = SIGNAL
+        .captures(backtrace)
+        .map_or("an unknown signal", |c| c.get(1).map_or("", |m| m.as_str()));
+    let frames: Vec<&str> = backtrace
+        .lines()
+        .take_while(|l| !l.starts_with("Thread "))
+        .filter_map(|l| FRAME.captures(l).and_then(|c| c.get(1)).map(|m| m.as_str()))
+        .take(3)
+        .collect();
+    let stack = if frames.is_empty() {
+        "no frames".to_string()
+    } else {
+        frames.join(" < ")
+    };
+    format!("core of {program}, {signal} in {stack}")
+}
+
+/// The executable a core came from, when `kernel.core_pattern` has `%E` in it, which writes the
+/// path with `!` for each `/`: `core.!tmp!pg!bin!postgres.4242`.
+#[must_use]
+pub fn core_program(name: &str) -> Option<PathBuf> {
+    let rest = name.strip_prefix("core.")?;
+    let (path, _) = rest.rsplit_once('.')?;
+    path.starts_with('!')
+        .then(|| PathBuf::from(path.replace('!', "/")))
+}
+
+/// Every file under a directory, sorted, so the report comes out the same each time.
+fn files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Logs `rpg test` keeps that are not a TAP script's.
+fn not_tap(name: &str) -> bool {
+    name == "postmaster.log"
+        || name == "initdb.log"
+        || name == "check.log"
+        || name.ends_with(".postmaster.log")
+}
+
+/// Group the failures a build directory's `results/` holds, and the cores in `cores`, writing each
+/// core's backtrace into `<out>/triage/`.
+pub fn triage(out: &Path, cores: &Path) -> Triage {
+    let mut triage = Triage::default();
+    let relative = |p: &Path| p.strip_prefix(out).unwrap_or(p).display().to_string();
+    let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_default();
+    let results = out.join("results");
+    let all = files(&results);
+    for path in &all {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let dir = path.parent().unwrap_or(&results);
+        let run = relative(dir);
+        let run = run.trim_start_matches("results/");
+        if let Some(stem) = name.strip_suffix(".diffs") {
+            let server = if stem == "regression" {
+                dir.join("postmaster.log")
+            } else {
+                dir.join(format!("{stem}.postmaster.log"))
+            };
+            let crash = crash_line(&read(&server));
+            for (test, signature) in diff_chunks(&read(path)) {
+                let test = if stem == "regression" {
+                    format!("{run}: {test}")
+                } else {
+                    format!("{run}: {stem}/{test}")
+                };
+                let signature = crash.clone().unwrap_or(signature);
+                triage.add(signature, test, relative(path));
+            }
+        } else if let Some(stem) = name.strip_suffix(".log") {
+            let paired = dir.join(format!("{stem}.diffs"));
+            if not_tap(&name) || name.starts_with("test-") || all.contains(&paired) {
+                continue;
+            }
+            triage.add(
+                tap_signature(&read(path)),
+                format!("{run}: {stem}"),
+                relative(path),
+            );
+        }
+    }
+
+    let traces = out.join("triage");
+    for core in files(cores) {
+        let name = core
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if !name.starts_with("core") {
+            continue;
+        }
+        let Some(program) = core_program(&name) else {
+            triage.unread.push((
+                name,
+                "the name does not carry the executable's path, which kernel.core_pattern gives with %E".into(),
+            ));
+            continue;
+        };
+        let core_path = core.display().to_string();
+        let program_path = program.display().to_string();
+        let backtrace = match crate::process::capture(
+            Path::new("gdb"),
+            &[
+                "-batch",
+                "-nx",
+                "-ex",
+                "bt",
+                "-ex",
+                "thread apply all bt full",
+                &program_path,
+                &core_path,
+            ],
+        ) {
+            Ok(text) => text,
+            Err(e) => {
+                triage.unread.push((name, e));
+                continue;
+            }
+        };
+        std::fs::create_dir_all(&traces).ok();
+        let trace = traces.join(format!("{name}.txt"));
+        std::fs::write(&trace, &backtrace).ok();
+        let short = program.file_name().map_or_else(
+            || program_path.clone(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        triage.cores += 1;
+        triage.add(core_signature(&short, &backtrace), name, relative(&trace));
+    }
+    triage
+}
+
+/// The most names a group lists before it says how many more there are.
+const LISTED: usize = 40;
+
+/// The report, as markdown.
+#[must_use]
+pub fn report(triage: &Triage) -> String {
+    let mut text = String::from("# Triage\n\n");
+    let groups = triage.sorted();
+    let _ = writeln!(
+        text,
+        "{} failures in {} groups, {} of them core files.",
+        triage.failures(),
+        groups.len(),
+        triage.cores,
+    );
+    for (signature, failures) in &groups {
+        let _ = write!(text, "\n## {}: `{signature}`\n\n", failures.len());
+        for f in failures.iter().take(LISTED) {
+            let _ = writeln!(text, "- {} ({})", f.test, f.file);
+        }
+        if failures.len() > LISTED {
+            let _ = writeln!(text, "- and {} more", failures.len() - LISTED);
+        }
+    }
+    if !triage.unread.is_empty() {
+        text.push_str("\n## Cores that could not be read\n\n");
+        for (name, why) in &triage.unread {
+            let _ = writeln!(text, "- {name}: {why}");
+        }
+    }
+    text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn numbers_addresses_and_the_log_prefix_do_not_split_a_group() {
+        assert_eq!(
+            normalize(
+                "2026-09-29 14:05:28.123 UTC [4242] LOG:  server process (PID 4251) was terminated by signal 11: Segmentation fault"
+            ),
+            "LOG: server process (PID N) was terminated by signal N: Segmentation fault"
+        );
+        assert_eq!(normalize("  at 0x7ffc1234   here "), "at <addr> here");
+    }
+
+    #[test]
+    fn an_assertion_comes_before_the_signal_it_raised() {
+        let log = "\
+2026-09-29 14:05:28.100 UTC [4251] LOG:  statement: select 1
+TRAP: failed Assert(\"lsn != 0\"), File: \"xlog.c\", Line: 812, PID: 4251
+2026-09-29 14:05:28.200 UTC [4242] LOG:  server process (PID 4251) was terminated by signal 6: Aborted
+";
+        assert_eq!(
+            crash_line(log).as_deref(),
+            Some("crash: TRAP: failed Assert(\"lsn != N\"), File: \"xlog.c\", Line: N, PID: N")
+        );
+        assert_eq!(crash_line("LOG:  database system is ready"), None);
+    }
+
+    #[test]
+    fn each_test_in_a_diff_gets_its_first_changed_line() {
+        let text = "\
+diff -U3 /b/src/test/regress/expected/boolean.out /b/src/test/regress/results/boolean.out
+--- /b/src/test/regress/expected/boolean.out	2026-09-29 14:00:00
++++ /b/src/test/regress/results/boolean.out	2026-09-29 14:01:00
+@@ -10,7 +10,7 @@
+  select 1;
+-  t
++  f
+diff -U3 /b/src/test/regress/expected/int4.out /b/src/test/regress/results/int4.out
+--- /b/src/test/regress/expected/int4.out
++++ /b/src/test/regress/results/int4.out
+@@ -1,3 +1,2 @@
+ select 2147483647 + 1;
+-ERROR:  integer out of range
+";
+        assert_eq!(
+            diff_chunks(text),
+            vec![
+                ("boolean".to_string(), "+ f".to_string()),
+                (
+                    "int4".to_string(),
+                    "- ERROR: integer out of range".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_tap_log_is_its_crash_or_its_first_failed_test() {
+        let failed = "\
+[14:05:28.100](0.1s) ok 1 - initdb
+[14:05:28.200](0.1s) not ok 2 - replica caught up
+[14:05:28.200](0.0s) #   Failed test 'replica caught up'
+[14:05:28.200](0.0s) #   at t/001_stream_rep.pl line 97.
+";
+        assert_eq!(tap_signature(failed), "Failed test 'replica caught up'");
+        let crashed =
+            format!("{failed}LOG:  server process (PID 12) was terminated by signal 11\n");
+        assert_eq!(
+            tap_signature(&crashed),
+            "crash: LOG: server process (PID N) was terminated by signal N"
+        );
+    }
+
+    #[test]
+    fn a_core_is_the_signal_and_the_top_of_the_crashing_stack() {
+        let backtrace = "\
+Core was generated by `postgres: runner regression [local] SELECT'.
+Program terminated with signal SIGSEGV, Segmentation fault.
+#0  0x000055d1c2a3b4c5 in ExecInterpExpr (state=0x1, econtext=0x2, isnull=0x3) at execExprInterp.c:512
+#1  0x000055d1c2a3b000 in ExecEvalExprSwitchContext (state=0x1) at executor.h:356
+#2  ExecProject (projInfo=0x4) at executor.h:390
+#3  0x000055d1c2a3a000 in ExecScan (node=0x5) at execScan.c:180
+
+Thread 1 (Thread 0x7f00 (LWP 4251)):
+#0  0x000055d1c2a3b4c5 in ExecInterpExpr (state=0x1) at execExprInterp.c:512
+";
+        assert_eq!(
+            core_signature("postgres", backtrace),
+            "core of postgres, SIGSEGV in ExecInterpExpr < ExecEvalExprSwitchContext < ExecProject"
+        );
+    }
+
+    #[test]
+    fn the_program_comes_from_a_core_pattern_with_the_path_in_it() {
+        assert_eq!(
+            core_program("core.!tmp!pg!bin!postgres.4242"),
+            Some(PathBuf::from("/tmp/pg/bin/postgres"))
+        );
+        assert_eq!(core_program("core.postgres.4242"), None);
+        assert_eq!(core_program("core"), None);
+    }
+
+    #[test]
+    fn a_crash_puts_every_test_of_its_run_in_one_group() {
+        let out = std::env::temp_dir().join(format!("rpg-triage-{}", std::process::id()));
+        let run = out.join("results/regress/run-1");
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(
+            run.join("regression.diffs"),
+            "diff -U3 a/expected/x.out a/results/x.out\n+server closed the connection unexpectedly\n\
+             diff -U3 a/expected/y.out a/results/y.out\n+connection to server was lost\n",
+        )
+        .unwrap();
+        std::fs::write(
+            run.join("postmaster.log"),
+            "LOG:  server process (PID 9) was terminated by signal 11: Segmentation fault\n",
+        )
+        .unwrap();
+        let tap = out.join("results/world/run-1");
+        std::fs::create_dir_all(&tap).unwrap();
+        std::fs::write(
+            tap.join("src-bin-initdb-001_initdb.log"),
+            "not ok 3 - locale\n#   Failed test 'locale'\n",
+        )
+        .unwrap();
+        std::fs::write(tap.join("check.log"), "make check-world\n").unwrap();
+        let triage = triage(&out, &out.join("cores"));
+        std::fs::remove_dir_all(&out).ok();
+        assert_eq!(triage.failures(), 3);
+        let sorted = triage.sorted();
+        assert_eq!(
+            sorted[0].0,
+            "crash: LOG: server process (PID N) was terminated by signal N: Segmentation fault"
+        );
+        assert_eq!(
+            sorted[0]
+                .1
+                .iter()
+                .map(|f| f.test.as_str())
+                .collect::<Vec<_>>(),
+            ["regress/run-1: x", "regress/run-1: y"]
+        );
+        assert_eq!(sorted[1].0, "Failed test 'locale'");
+        assert!(report(&triage).contains("## 2: `crash: LOG:"));
+    }
+}

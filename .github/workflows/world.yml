@@ -26,6 +26,7 @@ on:
       - crates/rpg/src/pins.rs
       - crates/rpg/src/cross.rs
       - crates/rpg/src/stress.rs
+      - crates/rpg/src/triage.rs
       - crates/rpg/src/configdiff.rs
       - config-divergences.toml
 
@@ -60,7 +61,7 @@ jobs:
       - name: install what the tap tests and the build need
         run: |
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
-          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex
+          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex gdb
       - name: install rucc
         run: |
           set -euo pipefail
@@ -80,10 +81,23 @@ jobs:
         run: |
           ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config minimal \
             --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
+      # What rpg triage reads afterwards: a core from any process that crashes, named with the
+      # path of its executable so gdb can be given both, and server logs at debug1, which
+      # TEMP_CONFIG reaches under autoconf and in every TAP script.
+      - name: keep cores and debug1 server logs
+        run: |
+          mkdir -p "$RUNNER_TEMP/pg/cores"
+          sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/pg/cores/core.%E.%p"
+          echo "log_min_messages = debug1" > "$RUNNER_TEMP/debug1.conf"
+          echo "TEMP_CONFIG=$RUNNER_TEMP/debug1.conf" >> "$GITHUB_ENV"
       - name: rpg test --suite world
         run: |
           set -o pipefail
+          ulimit -c unlimited
           ./target/release/rpg test --suite world --out "$RUNNER_TEMP/pg" | tee "$RUNNER_TEMP/world.txt"
+      - name: rpg triage
+        if: always()
+        run: ./target/release/rpg triage --out "$RUNNER_TEMP/pg"
       - name: summary
         if: always()
         run: |
@@ -96,6 +110,8 @@ jobs:
             echo
             jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
               "$RUNNER_TEMP/pg/records.jsonl" 2>/dev/null || true
+            echo
+            sed 's/^# Triage$/#### Triage/; s/^## /##### /' "$RUNNER_TEMP/pg/triage.md" 2>/dev/null | head -200 || true
           } >> "$GITHUB_STEP_SUMMARY"
       - name: keep the run
         if: always()
@@ -104,6 +120,8 @@ jobs:
           name: rpg-world-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}
           path: |
             ${{ runner.temp }}/pg/results/
+            ${{ runner.temp }}/pg/triage.md
+            ${{ runner.temp }}/pg/triage/
             ${{ runner.temp }}/pg/records.jsonl
             ${{ runner.temp }}/pg/test-world-run.log
             ${{ runner.temp }}/pg/build.log
