@@ -16,6 +16,7 @@ mod regress;
 mod repo;
 mod repro;
 mod settings;
+mod stress;
 mod suite;
 
 use cli::Args;
@@ -44,6 +45,7 @@ fn main() -> ExitCode {
             "asm-audit" => asm_audit_command(&repo, &args),
             "frames" => frames_command(&repo, &args),
             "cross-modules" => cross_command(&args),
+            "stress" => stress_command(&repo, &args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -323,6 +325,50 @@ fn cross_command(args: &Args) -> Result<ExitCode, String> {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+fn stress_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let out = pick_out(repo, args)?;
+    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let info = build::BuildInfo::load(&out)?;
+    let rows = Rows::load(&repo.rows())?;
+    let row = args.get("row").map(|r| rows.get(r)).transpose()?;
+    let plan = stress::StressPlan {
+        suite: suite::SuitePlan {
+            out: out.clone(),
+            timeout: timeout(args, row, &info.level)?,
+            info,
+            suite: "stress".to_string(),
+            row: row.map(|r| r.name.clone()),
+            baseline: None,
+            run: args.number("run", 1)?,
+        },
+        minutes: args.number("minutes", 5)?,
+        clients: args.number("clients", process::cores() * 2)?,
+        scale: args.number("scale", 10)?,
+    };
+    let checks = stress::run(&plan)?;
+    let records = stress::records(&plan, &checks);
+    let path = args
+        .get("records")
+        .map_or_else(|| out.join("records.jsonl"), PathBuf::from);
+    records::append(&path, &records)?;
+    for check in &checks {
+        println!(
+            "stress: {} {}: {}",
+            check.name,
+            check.outcome.name(),
+            check.note
+        );
+    }
+    println!("records:   {}", path.display());
+    Ok(
+        if checks.iter().all(|c| c.outcome == records::Outcome::Passed) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        },
+    )
 }
 
 fn baseline_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
