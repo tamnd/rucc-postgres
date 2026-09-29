@@ -27,6 +27,7 @@ on:
       - crates/rpg/src/cross.rs
       - crates/rpg/src/stress.rs
       - crates/rpg/src/triage.rs
+      - crates/rpg/src/mixed.rs
       - crates/rpg/src/configdiff.rs
       - crates/rpg/src/frames.rs
       - config-divergences.toml
@@ -257,6 +258,86 @@ jobs:
             ${{ runner.temp }}/gcc/records.jsonl
             ${{ runner.temp }}/rucc/results/
             ${{ runner.temp }}/rucc/records.jsonl
+          if-no-files-found: ignore
+
+  # PG2's bisection. The suite run looks for a test that fails with rucc's objects and passes with
+  # gcc's, and says so when there is none. The planted run has a check that fails whenever
+  # int8.o is exactly rucc's, so the search has to end at that object and at the last
+  # transformation rucc makes in it, which shows every step works on a real tree.
+  mixed:
+    name: mixed at -O2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+      PLANTED: src/backend/utils/adt/int8.o
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what the tap tests and the build need
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: build with gcc and with rucc
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+          for cc in gcc "$RUCC"; do
+            name=$(basename "$cc")
+            ./target/release/rpg build --pin "$PIN" --cc "$cc" --level -O2 --system autoconf --config minimal \
+              --out "$RUNNER_TEMP/$name" --jobs "$(nproc)"
+          done
+      - name: rpg mixed on the main suite
+        run: |
+          set +e
+          ./target/release/rpg mixed --gcc "$RUNNER_TEMP/gcc" --rucc "$RUNNER_TEMP/rucc" --suite regress \
+            --out "$RUNNER_TEMP/mixed-regress" > "$RUNNER_TEMP/mixed-regress.txt" 2>&1
+          status=$?
+          set -e
+          tail -n 20 "$RUNNER_TEMP/mixed-regress.txt"
+          [ "$status" = 0 ] || grep -q 'nothing to look for' "$RUNNER_TEMP/mixed-regress.txt"
+      - name: rpg mixed on a planted fault
+        run: |
+          set -o pipefail
+          ./target/release/rpg mixed --gcc "$RUNNER_TEMP/gcc" --rucc "$RUNNER_TEMP/rucc" \
+            --check "! cmp -s \"\$RPG_BUILD/$PLANTED\" \"$RUNNER_TEMP/rucc/build/$PLANTED\"" \
+            --out "$RUNNER_TEMP/mixed-planted" | tee "$RUNNER_TEMP/mixed-planted.txt"
+          grep -q "^object: *$PLANTED from" "$RUNNER_TEMP/mixed-planted.txt"
+          grep -q '^fuel: *transformation' "$RUNNER_TEMP/mixed-planted.txt"
+      - name: the gcc tree is as it was
+        run: |
+          cd "$RUNNER_TEMP/gcc/build"
+          cmp "$PLANTED" "$RUNNER_TEMP/mixed-planted/gcc-objects/$PLANTED"
+      - name: summary
+        if: always()
+        run: |
+          for run in regress planted; do
+            [ -f "$RUNNER_TEMP/mixed-$run/mixed.md" ] && cat "$RUNNER_TEMP/mixed-$run/mixed.md" >> "$GITHUB_STEP_SUMMARY"
+          done
+          true
+      - name: keep the runs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-mixed-${{ env.PIN }}
+          path: |
+            ${{ runner.temp }}/mixed-*/mixed.md
+            ${{ runner.temp }}/mixed-*/ir/
+            ${{ runner.temp }}/mixed-*/trial-*/*.log
+            ${{ runner.temp }}/mixed-*.txt
+            ${{ runner.temp }}/gcc/test-mixed-*.log
           if-no-files-found: ignore
 
   # PG3's sixth criterion: pgbench against the server rucc built, with the balances checked
