@@ -1,0 +1,13 @@
+date = "2026-09-29"
+pin = "REL_19_STABLE"
+commit = "78d07020bd0593e4916cbf7e535061e63f82b767"
+config = "minimal"
+system = "meson"
+level = "-O2"
+compiler = "rucc 0.15.2"
+host = "runnervmtr4k5"
+built = true
+failing = []
+
+[counts]
+passed = 982
