@@ -516,8 +516,8 @@ mod tests {
             }
         });
         std::fs::write(row.join("build.json"), info.to_string()).unwrap();
-        let record = r#"{"project":"postgres","pin":"REL_18_6","host":"runner","level":"-O2","system":"autoconf","config":"minimal","suite":"regress","test":"int8","outcome":"failed","compiler":"rucc 0.12.3"}"#;
-        std::fs::write(row.join("records.jsonl"), format!("{record}\n")).unwrap();
+        let line = r#"{"project":"postgres","pin":"REL_18_6","host":"runner","level":"-O2","system":"autoconf","config":"minimal","suite":"regress","test":"int8","outcome":"failed","compiler":"rucc 0.12.3"}"#;
+        std::fs::write(row.join("records.jsonl"), format!("{line}\n")).unwrap();
         let recorded = record(&dir.join("nights"), &runs, &reports).unwrap();
         assert_eq!(recorded.written.len(), 1);
         assert!(
