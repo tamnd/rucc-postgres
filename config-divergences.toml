@@ -10,3 +10,28 @@
 source = "pg_config.h"
 name = "PG_VERSION_STR"
 why = "The string `SELECT version()` returns, which names the compiler. Nothing tests it with #if, so it changes a string constant and no code."
+
+# REL_19_STABLE asks for typeof_unqual. configure and meson try the C23 keyword first and the GNU
+# spelling second, and stop at the first that compiles. gcc-14 defaults to gnu17, where only
+# `__typeof_unqual__` is a keyword, so it defines typeof_unqual to that. rucc defaults to C23, as
+# gcc 15 and later do, so the first try works and nothing needs defining. Either way c.h spells
+# it typeof_unqual and gets the same keyword.
+[[divergence]]
+source = "pg_config.h"
+name = "typeof_unqual"
+why = "gcc-14 defaults to gnu17 and gets `__typeof_unqual__`, rucc defaults to C23 like gcc 15 and later and needs no define. Both builds use the same keyword."
+
+[[divergence]]
+source = "probe"
+name = "for typeof_unqual"
+why = "configure's answer is the spelling that compiled first, `typeof_unqual` in C23 and `__typeof_unqual__` in gnu17. See the pg_config.h entry."
+
+[[divergence]]
+source = "probe"
+name = "Checking if \"typeof_unqual\" compiles"
+why = "meson tries the C23 keyword first. It is a keyword in rucc's default C23 and not in gcc-14's default gnu17."
+
+[[divergence]]
+source = "probe"
+name = "Checking if \"__typeof_unqual__\" compiles"
+why = "meson only asks for the GNU spelling when the C23 keyword failed, so under rucc it never asks."
