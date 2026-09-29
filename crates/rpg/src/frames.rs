@@ -26,6 +26,11 @@
 //! and often keeps no function under the plain name. A function that has no exact match on the
 //! other side is matched a second time by the name before the first dot, taking the largest frame
 //! of each side, and the report counts how many pairs were matched that way.
+//!
+//! gcc's partial inlining splits a function in two. The start keeps the plain name and the rest
+//! moves to a `.part.N` clone that the start calls, so the plain name alone can be an 8 byte frame
+//! for a function whose body takes kilobytes. A `.part` clone left over after matching is added to
+//! the pair with its base name in the same object, which is the stack a call through it takes.
 
 use crate::build::{BuildInfo, lexical};
 use crate::compiler::checkout_commit;
@@ -436,6 +441,8 @@ pub struct Pair {
     pub b: Frame,
     /// Whether the pair was matched by the name before the first dot.
     pub by_base: bool,
+    /// gcc's `.part` clone of a's function, when its frame was added to a's.
+    pub part: Option<Frame>,
 }
 
 impl Pair {
@@ -468,6 +475,11 @@ fn base_name(name: &str) -> &str {
     }
 }
 
+/// Whether a name is one of gcc's `.part` clones, the rest of a function after partial inlining.
+fn is_part(name: &str) -> bool {
+    base_name(name) != name && name.split('.').skip(1).any(|s| s == "part")
+}
+
 /// Join two builds' frames by key, then match what is left by the name before the first dot.
 #[must_use]
 pub fn join(a: &BTreeMap<Key, Frame>, b: &BTreeMap<Key, Frame>) -> Joined {
@@ -486,6 +498,7 @@ pub fn join(a: &BTreeMap<Key, Frame>, b: &BTreeMap<Key, Frame>) -> Joined {
                 a: frame.clone(),
                 b: other.clone(),
                 by_base: false,
+                part: None,
             }),
             None => left_a
                 .entry(group(key))
@@ -511,6 +524,7 @@ pub fn join(a: &BTreeMap<Key, Frame>, b: &BTreeMap<Key, Frame>) -> Joined {
                     a: fa,
                     b: fb,
                     by_base: true,
+                    part: None,
                 });
             }
             joined.only_b.append(&mut from_b);
@@ -520,6 +534,25 @@ pub fn join(a: &BTreeMap<Key, Frame>, b: &BTreeMap<Key, Frame>) -> Joined {
     for (_, mut rest) in left_b {
         joined.only_b.append(&mut rest);
     }
+    let mut rest = Vec::new();
+    for (key, frame) in std::mem::take(&mut joined.only_a) {
+        let whole = group(&key);
+        let pair = joined
+            .pairs
+            .iter_mut()
+            .find(|p| p.part.is_none() && p.key == whole && is_part(&key.function));
+        match pair {
+            Some(pair) => {
+                pair.a.bytes += frame.bytes;
+                if frame.qualifier.is_dynamic() {
+                    pair.a.qualifier = frame.qualifier;
+                }
+                pair.part = Some(frame);
+            }
+            None => rest.push((key, frame)),
+        }
+    }
+    joined.only_a = rest;
     joined.pairs.sort_by(|x, y| x.key.cmp(&y.key));
     joined.only_a.sort_by(|x, y| x.0.cmp(&y.0));
     joined.only_b.sort_by(|x, y| x.0.cmp(&y.0));
@@ -619,6 +652,9 @@ fn flags(pair: &Pair) -> String {
     }
     if pair.b.qualifier.is_dynamic() {
         out.push(format!("b {}", pair.b.qualifier.name()));
+    }
+    if let Some(part) = &pair.part {
+        out.push(format!("a with `{}` of {}", part.function, part.bytes));
     }
     if pair.by_base {
         out.push(format!(
@@ -761,9 +797,10 @@ pub fn report(a: &Measured, b: &Measured, joined: &Joined, date: &str, host: &st
     }
 
     let by_base = joined.pairs.iter().filter(|p| p.by_base).count();
+    let parts = joined.pairs.iter().filter(|p| p.part.is_some()).count();
     let _ = writeln!(
         text,
-        "\n## Matching\n\n{} functions are on both sides, {} only in a and {} only in b. {by_base} of the pairs were matched by the name before the first dot, which is how gcc names the clones it makes (`.isra.0`, `.constprop.0`, `.part.0`). A function on one side only is usually one the other compiler inlined everywhere it was called, or a static inline function from a header that one compiler emitted and the other did not.",
+        "\n## Matching\n\n{} functions are on both sides, {} only in a and {} only in b. {by_base} of the pairs were matched by the name before the first dot, which is how gcc names the clones it makes (`.isra.0`, `.constprop.0`, `.part.0`). In {parts} pairs a's frame includes the `.part` clone gcc split the function into, since the plain name keeps only the start of the function and calls the clone for the rest. A function on one side only is usually one the other compiler inlined everywhere it was called, or a static inline function from a header that one compiler emitted and the other did not.",
         joined.pairs.len(),
         joined.only_a.len(),
         joined.only_b.len()
@@ -1024,14 +1061,56 @@ mod tests {
         assert!(pair.by_base);
         assert_eq!(pair.key.function, "walk");
         assert_eq!(pair.a.function, "walk.isra.0");
-        assert_eq!(pair.ratio(), Some(2.0));
-        assert_eq!(joined.only_a.len(), 1);
-        assert_eq!(joined.only_a[0].1.function, "walk.part.0");
+        assert_eq!(pair.part.as_ref().unwrap().function, "walk.part.0");
+        assert_eq!(pair.a.bytes, 64);
+        assert_eq!(pair.ratio(), Some(1.5));
+        assert!(joined.only_a.is_empty());
         assert!(joined.only_b.is_empty());
         assert_eq!(
             base_name("T ns::g(T) [with T = long int]"),
             "T ns::g(T) [with T = long int]"
         );
+    }
+
+    #[test]
+    fn a_split_function_counts_the_part_gcc_moved_out_of_it() {
+        let mut a = BTreeMap::new();
+        a.insert(key("x.c", "stop"), frame("stop", 8, Qualifier::Static));
+        a.insert(
+            key("x.c", "stop.part.0"),
+            frame("stop.part.0", 2080, Qualifier::Static),
+        );
+        a.insert(
+            key("y.c", "stop.part.0"),
+            frame("stop.part.0", 64, Qualifier::Static),
+        );
+        a.insert(
+            key("x.c", "copy.constprop.0"),
+            frame("copy.constprop.0", 32, Qualifier::Static),
+        );
+        let mut b = BTreeMap::new();
+        b.insert(key("x.c", "stop"), frame("stop", 2064, Qualifier::Static));
+        b.insert(key("x.c", "copy"), frame("copy", 16, Qualifier::Static));
+        let joined = join(&a, &b);
+        let stop = joined
+            .pairs
+            .iter()
+            .find(|p| p.key.function == "stop")
+            .unwrap();
+        assert!(!stop.by_base);
+        assert_eq!(stop.a.bytes, 2088);
+        assert_eq!(stop.part.as_ref().unwrap().bytes, 2080);
+        assert!(flags(stop).contains("a with `stop.part.0` of 2080"));
+        let copy = joined
+            .pairs
+            .iter()
+            .find(|p| p.key.function == "copy")
+            .unwrap();
+        assert!(copy.part.is_none());
+        assert_eq!(joined.only_a.len(), 1);
+        assert_eq!(joined.only_a[0].0.file, "y.c");
+        assert!(is_part("f.part.0") && is_part("f.isra.0.part.0"));
+        assert!(!is_part("f.constprop.0") && !is_part("part") && !is_part("f(a.part)"));
     }
 
     #[test]
@@ -1051,6 +1130,7 @@ mod tests {
             a: frame("f", a, Qualifier::Static),
             b: frame("f", b, Qualifier::Static),
             by_base: false,
+            part: None,
         };
         let pairs = [
             pair(16, 16),
