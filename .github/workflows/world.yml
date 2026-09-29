@@ -99,3 +99,63 @@ jobs:
             ${{ runner.temp }}/pg/build.log
             ${{ runner.temp }}/pg/build/meson-logs/testlog.json
           if-no-files-found: ignore
+
+  # PG3's fourth criterion: every object is the same when compiled twice, and two builds in
+  # different directories give the same postgres binary once the debug information, which holds
+  # the paths, is stripped.
+  reproducible:
+    name: reproducible at ${{ matrix.level }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [-O0, -O2]
+    timeout-minutes: 60
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin REL_18_6 --no-upstream-check
+      - name: build with every object compiled twice
+        run: |
+          ./target/release/rpg build --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
+            --out "$RUNNER_TEMP/first" --jobs "$(nproc)" --twice | tee "$RUNNER_TEMP/first.txt"
+          grep -q '^twice: *0 ' "$RUNNER_TEMP/first.txt"
+      - name: build again somewhere else
+        run: |
+          ./target/release/rpg build --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
+            --out "$RUNNER_TEMP/second/elsewhere" --jobs "$(nproc)"
+      - name: compare the binaries
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          different=0
+          for a in $(cd first/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
+            b="second/elsewhere/build/$a"
+            [ -f "$b" ] || continue
+            strip --strip-debug -o one "first/build/$a"
+            strip --strip-debug -o two "$b"
+            if ! cmp -s one two; then
+              echo "differs: $a"
+              different=$((different + 1))
+            fi
+          done
+          echo "$different binaries differ" | tee -a "$GITHUB_STEP_SUMMARY"
+          strip --strip-debug -o one first/build/src/backend/postgres
+          strip --strip-debug -o two second/elsewhere/build/src/backend/postgres
+          cmp one two
