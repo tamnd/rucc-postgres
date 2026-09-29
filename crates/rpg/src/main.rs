@@ -339,6 +339,7 @@ fn stress_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
             timeout: timeout(args, row, &info.level)?,
             info,
             suite: "stress".to_string(),
+            label: None,
             row: row.map(|r| r.name.clone()),
             baseline: None,
             run: args.number("run", 1)?,
