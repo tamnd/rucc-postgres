@@ -143,24 +143,28 @@ jobs:
       - name: build again somewhere else
         run: |
           ./target/release/rpg build --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
-            --out "$RUNNER_TEMP/second/elsewhere" --jobs "$(nproc)"
+            --out "$RUNNER_TEMP/again" --jobs "$(nproc)"
+      # pg_config's answers, the configure arguments and CC among them, are compiled into
+      # postgres and pg_config, and CC is the shim inside each build's directory. The two
+      # directories have names of the same length, so the one name can stand in for the other
+      # before the bytes are compared.
       - name: compare the binaries
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
           different=0
           for a in $(cd first/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
-            b="second/elsewhere/build/$a"
+            b="again/build/$a"
             [ -f "$b" ] || continue
             # Scripts are named pg* too, and strip refuses anything that is not an object.
             strip --strip-debug -o one "first/build/$a" 2>/dev/null || continue
             strip --strip-debug -o two "$b"
+            python3 -c 'import sys; p=sys.argv[1]; d=open(p,"rb").read(); open(p,"wb").write(d.replace(b"/first/", b"/again/"))' one
             if ! cmp -s one two; then
               echo "differs: $a"
+              diff <(strings -n 6 one) <(strings -n 6 two) | head -20 || true
               different=$((different + 1))
             fi
           done
           echo "$different binaries differ" | tee -a "$GITHUB_STEP_SUMMARY"
-          strip --strip-debug -o one first/build/src/backend/postgres
-          strip --strip-debug -o two second/elsewhere/build/src/backend/postgres
-          cmp one two
+          [ "$different" = 0 ]
