@@ -46,6 +46,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "stress" => &[
             "out", "row", "records", "run", "timeout", "minutes", "clients", "scale",
         ],
+        "triage" => &["out", "cores"],
         "help" => &[],
         _ => return None,
     })
@@ -68,6 +69,7 @@ usage:
   rpg asm-audit [--pin NAME] [--out FILE]
   rpg frames --a DIR --b DIR [--a-cc PATH] [--b-cc PATH] [--out FILE] [--jobs N]
   rpg cross-modules --server DIR --modules DIR [--records FILE] [--timeout S]
+  rpg triage [--out DIR] [--cores DIR]
   rpg stress [--out DIR] [--row ROW] [--minutes 5] [--clients N] [--scale 10] [--records FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked
