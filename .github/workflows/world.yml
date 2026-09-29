@@ -148,7 +148,8 @@ jobs:
           for a in $(cd first/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
             b="second/elsewhere/build/$a"
             [ -f "$b" ] || continue
-            strip --strip-debug -o one "first/build/$a"
+            # Scripts are named pg* too, and strip refuses anything that is not an object.
+            strip --strip-debug -o one "first/build/$a" 2>/dev/null || continue
             strip --strip-debug -o two "$b"
             if ! cmp -s one two; then
               echo "differs: $a"
