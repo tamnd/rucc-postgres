@@ -145,7 +145,7 @@ fn section_dir(subdir: &str, kind: &str) -> String {
 
 /// initdb refuses to run as root, so a suite run as root fails in a way that looks like a
 /// build problem. Say so before starting.
-fn refuse_root() -> Result<(), String> {
+pub(crate) fn refuse_root() -> Result<(), String> {
     let uid = crate::process::capture(Path::new("id"), &["-u"]).unwrap_or_default();
     if uid.trim() == "0" {
         return Err(
@@ -491,7 +491,7 @@ fn tap(output: &mut RegressOutput, module: &str, dir: &Path, run: RegressOutput,
     }
 }
 
-fn record(
+pub(crate) fn record(
     plan: &SuitePlan,
     test: &str,
     outcome: Outcome,

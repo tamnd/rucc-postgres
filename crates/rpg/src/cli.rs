@@ -35,6 +35,9 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "repro" => &["build", "file", "out", "object"],
         "frames" => &["a", "b", "a-cc", "b-cc", "out", "jobs"],
         "cross-modules" => &["server", "modules", "records", "timeout"],
+        "stress" => &[
+            "out", "row", "records", "run", "timeout", "minutes", "clients", "scale",
+        ],
         "help" => &[],
         _ => return None,
     })
@@ -57,6 +60,7 @@ usage:
   rpg asm-audit [--pin NAME] [--out FILE]
   rpg frames --a DIR --b DIR [--a-cc PATH] [--b-cc PATH] [--out FILE] [--jobs N]
   rpg cross-modules --server DIR --modules DIR [--records FILE] [--timeout S]
+  rpg stress [--out DIR] [--row ROW] [--minutes 5] [--clients N] [--scale 10] [--records FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked
 sources go to RPG_CACHE, or ~/.cache/rpg. Build directories default to work/ in the repository.
