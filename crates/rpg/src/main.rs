@@ -6,6 +6,7 @@ mod build;
 mod cli;
 mod compiler;
 mod configdiff;
+mod cross;
 mod demands;
 mod frames;
 mod pins;
@@ -42,6 +43,7 @@ fn main() -> ExitCode {
             "repro" => repro_command(&args),
             "asm-audit" => asm_audit_command(&repo, &args),
             "frames" => frames_command(&repo, &args),
+            "cross-modules" => cross_command(&args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -269,6 +271,7 @@ fn test_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
         row: row.map(|r| r.name.clone()),
         baseline,
         run: args.number("run", 1)?,
+        label: None,
     };
     let run = suite::run(&plan)?;
     let path = args
@@ -285,6 +288,37 @@ fn test_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
             && r.baseline.as_deref().is_none_or(|b| b == "passed")
     });
     Ok(if regressed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+fn cross_command(args: &Args) -> Result<ExitCode, String> {
+    let server = PathBuf::from(args.need("server")?);
+    let server = std::fs::canonicalize(&server).unwrap_or(server);
+    let modules = PathBuf::from(args.need("modules")?);
+    let modules = std::fs::canonicalize(&modules).unwrap_or(modules);
+    let info = build::BuildInfo::load(&server)?;
+    let plan = cross::CrossPlan {
+        timeout: timeout(args, None, &info.level)?,
+        server: server.clone(),
+        modules,
+    };
+    let runs = cross::cross(&plan)?;
+    let path = args
+        .get("records")
+        .map_or_else(|| server.join("records.jsonl"), PathBuf::from);
+    let mut failed = false;
+    for (run, suite) in runs.iter().zip(["cross-contrib", "cross-modules"]) {
+        records::append(&path, &run.records)?;
+        print_run(run, suite);
+        failed |= run.records.iter().any(|r| {
+            r.outcome != records::Outcome::Passed && r.outcome != records::Outcome::Skipped
+        });
+    }
+    println!("records:   {}", path.display());
+    Ok(if failed {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
@@ -340,6 +374,7 @@ fn baseline_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
             timeout: timeout(args, Some(&row), &info.level)?,
             baseline: None,
             run,
+            label: None,
         };
         let result = suite::run(&suite_plan)?;
         print_run(&result, &format!("{suite_name} run {run}"));
