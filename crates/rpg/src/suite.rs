@@ -14,7 +14,9 @@
 use crate::build::{BuildInfo, Phase, environment, round};
 use crate::process::Step;
 use crate::records::{FailClass, Outcome, TestRecord};
-use crate::regress::{RegressOutput, parse_regress, parse_sections, parse_testlog};
+use crate::regress::{
+    MesonTest, RegressOutput, parse_regress, parse_sections, parse_testlog, world_from_testlog,
+};
 use crate::settings::System;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -160,7 +162,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
         ));
     }
     let system = System::parse(&plan.info.system)?;
-    if system == System::Meson && per_module(&plan.suite) {
+    if system == System::Meson && per_module(&plan.suite) && plan.suite != "world" {
         return Err(format!(
             "rpg test runs {} under autoconf only so far, since meson gives each module a suite of its own",
             plan.suite
@@ -195,6 +197,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
     let log = |name: &str| plan.out.join(format!("test-{}-{name}.log", plan.suite));
     let mut seconds = 0.0;
     let mut meson_result = None;
+    let mut meson_tests = Vec::new();
     let mut make_failed = false;
     match system {
         System::Meson => {
@@ -212,21 +215,33 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
             if !done.ok {
                 return Err("meson test --suite setup failed, so the suite cannot run".into());
             }
-            let mut step = Step::new(
-                &format!("meson test --suite {}", plan.suite),
-                "meson",
-                &build_dir,
-                &log("run"),
-            )
-            .args(["test", "--no-rebuild", "--suite", plan.suite.as_str()])
-            .envs(&env);
+            // world is every suite but setup, run as upstream's CI runs it, a process per core.
+            let jobs = plan.info.jobs.max(1).to_string();
+            let args = if plan.suite == "world" {
+                vec![
+                    "test",
+                    "--no-rebuild",
+                    "--no-suite",
+                    "setup",
+                    "--num-processes",
+                    &jobs,
+                ]
+            } else {
+                vec!["test", "--no-rebuild", "--suite", plan.suite.as_str()]
+            };
+            let label = format!("meson {}", args.join(" "));
+            let mut step = Step::new(&label, "meson", &build_dir, &log("run"))
+                .args(args)
+                .envs(&env);
             step.unset.clone_from(&unset);
             seconds += step.run()?.seconds;
             let testlog = std::fs::read_to_string(build_dir.join("meson-logs/testlog.json"))
                 .unwrap_or_default();
-            meson_result = parse_testlog(&testlog)
-                .into_iter()
-                .find(|t| t.short_name() == format!("{0}/{0}", plan.suite));
+            meson_tests = parse_testlog(&testlog);
+            meson_result = meson_tests
+                .iter()
+                .find(|t| t.short_name() == format!("{0}/{0}", plan.suite))
+                .cloned();
         }
         System::Autoconf => {
             // The main suite is the top level `make check`, as it always was here. The others run
@@ -263,7 +278,12 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
 
     std::fs::create_dir_all(&artifacts)
         .map_err(|e| format!("creating {}: {e}", artifacts.display()))?;
-    let (output, crashed) = if per_module(&plan.suite) {
+    let (output, crashed) = if system == System::Meson && plan.suite == "world" {
+        (
+            meson_world(&meson_tests, &build_dir, &artifacts),
+            BTreeSet::new(),
+        )
+    } else if per_module(&plan.suite) {
         modules(plan, &build_dir, &log("run"), &artifacts)
     } else {
         for (from, to) in [
@@ -411,6 +431,29 @@ fn modules(
         }
     }
     (output, crashed)
+}
+
+/// Read a meson `world` run out of `testlog.json` with [`world_from_testlog`], and copy the diffs
+/// and the TAP log of each meson test that failed out of `testrun/`, where meson keeps a directory
+/// per test.
+fn meson_world(tests: &[MesonTest], build_dir: &Path, artifacts: &Path) -> RegressOutput {
+    for test in tests.iter().filter(|t| !t.ok()) {
+        let short = test.short_name();
+        let dir = build_dir.join("testrun").join(short);
+        let script = short.rsplit('/').next().unwrap_or(short);
+        let name = short.replace('/', "-");
+        std::fs::copy(
+            dir.join("regression.diffs"),
+            artifacts.join(format!("{name}.diffs")),
+        )
+        .ok();
+        std::fs::copy(
+            dir.join(format!("log/regress_log_{script}")),
+            artifacts.join(format!("{name}.log")),
+        )
+        .ok();
+    }
+    world_from_testlog(tests)
 }
 
 /// Add one directory's TAP scripts to a per module output, and copy the log of each script that

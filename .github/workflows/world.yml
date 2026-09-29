@@ -1,5 +1,6 @@
-# PG3's suite: `make check-world` with the TAP scripts, on the pinned Postgres built by a released
-# rucc at -O0 and -O2 with the minimal configuration, and with the PG_TEST_EXTRA the exit criterion
+# PG3's suite: `make check-world` under autoconf and every suite but setup under meson, TAP
+# included, on the pinned Postgres built by a released rucc at -O0 and -O2 with the minimal
+# configuration, and with the PG_TEST_EXTRA the exit criterion
 # names. It takes too long for every pull request, so it runs each night, by hand, and on the pull
 # requests that change how the suite runs or is read.
 
@@ -32,12 +33,13 @@ env:
 
 jobs:
   world:
-    name: check-world at ${{ matrix.level }}
+    name: world under ${{ matrix.system }} at ${{ matrix.level }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         level: [-O0, -O2]
+        system: [autoconf, meson]
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
@@ -48,7 +50,7 @@ jobs:
       - name: install what the tap tests and the build need
         run: |
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
-          sudo apt-get install -y libipc-run-perl
+          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex
       - name: install rucc
         run: |
           set -euo pipefail
@@ -66,7 +68,7 @@ jobs:
           ./target/release/rpg fetch --pin REL_18_6 --no-upstream-check
       - name: rpg build
         run: |
-          ./target/release/rpg build --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
+          ./target/release/rpg build --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config minimal \
             --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
       - name: rpg test --suite world
         run: |
@@ -76,7 +78,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### check-world at ${{ matrix.level }} with rucc $RUCC_VERSION"
+            echo "### world under ${{ matrix.system }} at ${{ matrix.level }} with rucc $RUCC_VERSION"
             echo
             grep '^world:' "$RUNNER_TEMP/world.txt" || echo "rpg test did not get as far as a count"
             echo
@@ -89,9 +91,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world${{ matrix.level }}
+          name: rpg-world-${{ matrix.system }}${{ matrix.level }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/records.jsonl
             ${{ runner.temp }}/pg/test-world-run.log
+            ${{ runner.temp }}/pg/build.log
+            ${{ runner.temp }}/pg/build/meson-logs/testlog.json
           if-no-files-found: ignore

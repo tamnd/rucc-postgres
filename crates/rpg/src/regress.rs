@@ -321,6 +321,9 @@ pub struct MesonTest {
     /// What the test printed, when meson kept it.
     #[serde(default)]
     pub stdout: Option<String>,
+    /// Whether meson ran it alongside others.
+    #[serde(default)]
+    pub is_parallel: bool,
 }
 
 impl MesonTest {
@@ -343,6 +346,47 @@ pub fn parse_testlog(text: &str) -> Vec<MesonTest> {
     text.lines()
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect()
+}
+
+/// Read a meson run of every suite, `world`, as one output.
+///
+/// A meson test that runs `pg_regress`, whose name ends in `regress`, `isolation` or `ecpg`, gives
+/// one result per `pg_regress` test, named after the meson test, `amcheck/regress/check_btree`,
+/// and one more, named for the meson test alone, when meson counted it a failure and no test in it
+/// failed. Every other meson test is a TAP script and gives one result, `initdb/001_initdb`. The
+/// plan is the number of results, since meson ran each test to the end or timed it out.
+#[must_use]
+pub fn world_from_testlog(tests: &[MesonTest]) -> RegressOutput {
+    let mut out = RegressOutput::default();
+    for test in tests {
+        if test.suite.iter().any(|s| s.ends_with(":setup")) {
+            continue;
+        }
+        let short = test.short_name();
+        let kind = short.rsplit('/').next().unwrap_or(short);
+        let mut failed_inside = false;
+        if matches!(kind, "regress" | "isolation" | "ecpg") {
+            let inner = parse_regress(test.stdout.as_deref().unwrap_or_default());
+            failed_inside = inner.failed() > 0;
+            for mut result in inner.results {
+                result.name = format!("{short}/{}", result.name);
+                result.number = u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX);
+                out.results.push(result);
+            }
+            if test.ok() || failed_inside {
+                continue;
+            }
+        }
+        out.results.push(RegressResult {
+            number: u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX),
+            name: short.to_string(),
+            ok: test.ok(),
+            parallel: test.is_parallel,
+            seconds: test.duration,
+        });
+    }
+    out.planned = u32::try_from(out.results.len()).ok();
+    out
 }
 
 #[cfg(test)]
@@ -552,6 +596,36 @@ make[2]: Entering directory '/b/src/bin/pg_ctl'
             entering("make[3]: Entering directory '/b/src'"),
             Some("/b/src")
         );
+    }
+
+    #[test]
+    fn a_meson_world_run_gives_regress_tests_and_tap_scripts() {
+        let log = r##"{"name": "postgresql:setup / tmp_install", "result": "OK", "duration": 3.5, "suite": ["postgresql:setup"]}
+{"name": "postgresql:regress / regress/regress", "stdout": "ok 1         - test_setup   348 ms\nnot ok 2     + boolean   62 ms\n1..2\n", "result": "FAIL", "duration": 71.25, "suite": ["postgresql:regress"], "is_parallel": true}
+{"name": "postgresql:initdb / initdb/001_initdb", "result": "OK", "duration": 4.0, "suite": ["postgresql:initdb"], "is_parallel": true}
+{"name": "postgresql:amcheck / amcheck/regress", "stdout": "# could not start postmaster\nBail out!\n", "result": "FAIL", "duration": 2.0, "suite": ["postgresql:amcheck"]}
+{"name": "postgresql:recovery / recovery/027_stream_regress", "result": "TIMEOUT", "duration": 1000.0, "suite": ["postgresql:recovery"]}
+{"name": "postgresql:psql / psql/010_tab_completion", "result": "SKIP", "duration": 0.1, "suite": ["postgresql:psql"]}
+"##;
+        let out = world_from_testlog(&parse_testlog(log));
+        let names: Vec<(&str, bool)> = out
+            .results
+            .iter()
+            .map(|r| (r.name.as_str(), r.ok))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("regress/regress/test_setup", true),
+                ("regress/regress/boolean", false),
+                ("initdb/001_initdb", true),
+                ("amcheck/regress", false),
+                ("recovery/027_stream_regress", false),
+                ("psql/010_tab_completion", true),
+            ]
+        );
+        assert_eq!(out.planned, Some(6));
+        assert!((out.results[2].seconds - 4.0).abs() < 1e-9);
     }
 
     const TESTLOG: &str = r#"{"name": "postgresql:setup / tmp_install", "stdout": "", "result": "OK", "starttime": 1790000000.0, "duration": 3.5, "returncode": 0, "env": {}, "command": ["meson", "install"], "suite": ["postgresql:setup"], "is_parallel": false}
