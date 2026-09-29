@@ -8,6 +8,7 @@
 //! JSON object per meson test, which is where a timeout or a test that never started shows up.
 
 use serde::Deserialize;
+use std::path::Path;
 
 /// One `pg_regress` test result.
 #[derive(Debug, Clone, PartialEq)]
@@ -193,28 +194,15 @@ pub fn parse_prove(text: &str) -> RegressOutput {
             continue;
         }
         if summary {
-            if let Some((script, _)) = line.split_once(" (Wstat: ") {
-                failed(&mut out, script.trim());
+            if let Some((name, _)) = line.split_once(" (Wstat: ") {
+                script(&mut out, name.trim()).ok = false;
             }
             continue;
         }
-        let Some((script, verdict)) = prove_line(line) else {
+        let Some((name, verdict)) = prove_line(line) else {
             continue;
         };
-        let index = match out.results.iter().position(|r| r.name == script) {
-            Some(index) => index,
-            None => {
-                out.results.push(RegressResult {
-                    number: u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX),
-                    name: script.to_string(),
-                    ok: false,
-                    parallel: false,
-                    seconds: 0.0,
-                });
-                out.results.len() - 1
-            }
-        };
-        let result = &mut out.results[index];
+        let result = script(&mut out, name);
         if let Some(rest) = verdict.strip_prefix("ok") {
             result.ok = true;
             let mut words = rest.split_whitespace();
@@ -231,30 +219,35 @@ pub fn parse_prove(text: &str) -> RegressOutput {
     out
 }
 
-/// Mark a script failed, adding it when prove never printed its line.
-fn failed(out: &mut RegressOutput, script: &str) {
-    if let Some(result) = out.results.iter_mut().find(|r| r.name == script) {
-        result.ok = false;
-    } else {
+/// The result for a script, added when prove has not named it before.
+fn script<'a>(out: &'a mut RegressOutput, name: &str) -> &'a mut RegressResult {
+    let index = out.results.iter().position(|r| r.name == name);
+    let index = index.unwrap_or_else(|| {
         out.results.push(RegressResult {
             number: u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX),
-            name: script.to_string(),
+            name: name.to_string(),
             ok: false,
             parallel: false,
             seconds: 0.0,
         });
-    }
+        out.results.len() - 1
+    });
+    &mut out.results[index]
 }
 
 /// The script and what follows its dots in a `[04:50:33] t/001_initdb.pl ..... ok` line.
 fn prove_line(line: &str) -> Option<(&str, &str)> {
     let line = line.trim_start();
-    let line = match line.strip_prefix('[') {
-        Some(rest) => rest.split_once("] ")?.1,
-        None => line,
+    let line = if let Some(clock) = line.strip_prefix('[') {
+        clock.split_once("] ")?.1
+    } else {
+        line
     };
     let (script, rest) = line.split_once(' ')?;
-    if !script.starts_with("t/") || !script.ends_with(".pl") {
+    let is_perl = Path::new(script)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("pl"));
+    if !script.starts_with("t/") || !is_perl {
         return None;
     }
     let verdict = rest.trim_start_matches('.');
