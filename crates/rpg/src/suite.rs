@@ -1,10 +1,13 @@
 //! `rpg test`: run a suite against a finished build and write one record per test.
 //!
 //! The suites are the ones PG2 grades: `regress`, `isolation`, `ecpg`, and the `pg_regress` runs of
-//! `contrib` and `src/test/modules`. Under meson it is `meson test --suite setup` followed by
+//! `contrib` and `src/test/modules`, and PG3's `world`, which is `make check-world` with its TAP
+//! scripts. Under meson it is `meson test --suite setup` followed by
 //! `meson test --suite <suite>`, as upstream's CI does it, for the three that are one run each.
 //! Under autoconf it is `make check` for the main suite and `make -C <dir> check` for the others,
-//! with `-k` for the two that are a run per module. The per test results come from `pg_regress`'s
+//! with `-k` for the two that are a run per module. `world` is `make -k -j<jobs> -Otarget
+//! check-world PROVE_FLAGS=--timer`, as upstream's CI runs it, where `-Otarget` keeps each run's
+//! lines together in the log. The per test results come from `pg_regress`'s
 //! own output, and the logs and diffs of every run are copied out of the build tree into
 //! `results/<suite>/run-<n>/`, because the next run overwrites them.
 
@@ -81,7 +84,14 @@ impl Sets {
 }
 
 /// The suites `rpg test` knows how to run.
-pub const SUITES: &[&str] = &["regress", "isolation", "ecpg", "contrib", "modules"];
+pub const SUITES: &[&str] = &[
+    "regress",
+    "isolation",
+    "ecpg",
+    "contrib",
+    "modules",
+    "world",
+];
 
 /// Where a suite lives in the Postgres build tree under autoconf, which is where its `make check`
 /// runs.
@@ -91,13 +101,14 @@ fn suite_dir(suite: &str) -> &'static str {
         "ecpg" => "src/interfaces/ecpg",
         "contrib" => "contrib",
         "modules" => "src/test/modules",
+        "world" => "",
         _ => "src/test/regress",
     }
 }
 
-/// Whether a suite is one `pg_regress` run for each module in it rather than one run.
+/// Whether a suite is one `pg_regress` or prove run for each module in it rather than one run.
 fn per_module(suite: &str) -> bool {
-    matches!(suite, "contrib" | "modules")
+    matches!(suite, "contrib" | "modules" | "world")
 }
 
 /// Where `pg_regress` writes for a suite that is one run, relative to the Postgres build tree.
@@ -221,14 +232,24 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
             // The main suite is the top level `make check`, as it always was here. The others run
             // in their own directory, and `-k` lets one module that fails leave the rest to run.
             let dir = suite_dir(&plan.suite);
+            let jobs = format!("-j{}", plan.info.jobs.max(1));
             let mut args = Vec::new();
             if per_module(&plan.suite) {
                 args.push("-k");
             }
-            if plan.suite != "regress" {
-                args.extend(["-C", dir]);
+            if plan.suite == "world" {
+                args.extend([
+                    jobs.as_str(),
+                    "-Otarget",
+                    "check-world",
+                    "PROVE_FLAGS=--timer",
+                ]);
+            } else {
+                if plan.suite != "regress" {
+                    args.extend(["-C", dir]);
+                }
+                args.push("check");
             }
-            args.push("check");
             let label = format!("make {}", args.join(" "));
             let mut step = Step::new(&label, "make", &build_dir, &log("run"))
                 .args(args)
@@ -315,9 +336,11 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
 }
 
 /// Read the runs of a per module suite out of the log of its `make check`, as one output whose
-/// tests are named for their module, `amcheck/check_btree`, with the run's kind in between for a
-/// run that is not a plain regress run, `amcheck/isolation/read-write-unique`. Also copies each
-/// failing run's diffs and server log, and says which tests failed in a run whose server crashed.
+/// tests are named for their module, `amcheck/check_btree`, with the run's kind in between for an
+/// isolation run, `amcheck/isolation/read-write-unique`. A TAP script keeps its own name after the
+/// module, `src/bin/initdb/t/001_initdb.pl`. Under `world` the module is the whole directory. Also
+/// copies each failing run's diffs and server log, or a failing script's log, and says which tests
+/// failed in a run whose server crashed.
 fn modules(
     plan: &SuitePlan,
     build_dir: &Path,
@@ -326,17 +349,28 @@ fn modules(
 ) -> (RegressOutput, BTreeSet<String>) {
     let text = std::fs::read_to_string(log).unwrap_or_default();
     std::fs::write(artifacts.join("check.log"), &text).ok();
-    let top = format!("{}/", suite_dir(&plan.suite));
+    let top = match suite_dir(&plan.suite) {
+        "" => String::new(),
+        dir => format!("{dir}/"),
+    };
     let mut output = RegressOutput {
         planned: Some(0),
         ..RegressOutput::default()
     };
     let mut crashed = BTreeSet::new();
-    for section in parse_sections(&text) {
+    let root = build_dir.display().to_string();
+    for section in parse_sections(&text, &root) {
+        let module = section.subdir.strip_prefix(&top).unwrap_or(&section.subdir);
         if section.kind == "tap" {
+            tap(
+                &mut output,
+                module,
+                &build_dir.join(&section.subdir),
+                section.output,
+                artifacts,
+            );
             continue;
         }
-        let module = section.subdir.strip_prefix(&top).unwrap_or(&section.subdir);
         let prefix = if section.kind == "regress" {
             module.to_string()
         } else {
@@ -376,6 +410,31 @@ fn modules(
         }
     }
     (output, crashed)
+}
+
+/// Add one directory's TAP scripts to a per module output, and copy the log of each script that
+/// failed, which the TAP framework writes to `tmp_check/log/regress_log_<script>`.
+fn tap(output: &mut RegressOutput, module: &str, dir: &Path, run: RegressOutput, artifacts: &Path) {
+    output.planned = match (output.planned, run.planned) {
+        (Some(sum), Some(n)) => Some(sum + n),
+        _ => None,
+    };
+    if output.bailed.is_none() {
+        output.bailed = run.bailed.map(|reason| format!("{module}: {reason}"));
+    }
+    for mut result in run.results {
+        if !result.ok {
+            let stem = result.name.trim_start_matches("t/").trim_end_matches(".pl");
+            let name = format!("{module}/{stem}").replace('/', "-");
+            std::fs::copy(
+                dir.join(format!("tmp_check/log/regress_log_{stem}")),
+                artifacts.join(format!("{name}.log")),
+            )
+            .ok();
+        }
+        result.name = format!("{module}/{}", result.name);
+        output.results.push(result);
+    }
 }
 
 fn record(
@@ -430,7 +489,8 @@ mod tests {
     fn each_suite_runs_and_writes_where_its_makefile_does() {
         assert_eq!(suite_dir("regress"), "src/test/regress");
         assert_eq!(suite_dir("modules"), "src/test/modules");
-        assert!(per_module("contrib") && !per_module("isolation"));
+        assert!(per_module("contrib") && per_module("world") && !per_module("isolation"));
+        assert_eq!(suite_dir("world"), "");
         assert_eq!(
             regress_dir(System::Autoconf, "isolation"),
             "src/test/isolation/output_iso"

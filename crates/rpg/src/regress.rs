@@ -99,26 +99,169 @@ pub struct Section {
 /// Postgres's makefiles print `# +++ regress check in contrib/amcheck +++` ahead of each run, and
 /// `isolation` or `tap` in place of `regress` for the other kinds (see `pg_regress_check` in
 /// `src/Makefile.global.in`). Each run numbers its tests from 1 and prints its own plan, so the
-/// lines between two markers are one run. Anything before the first marker is make talking.
+/// lines between two markers are one run. Anything before the first marker is make talking. A
+/// `tap` run is prove's output and is read with [`parse_prove`].
+///
+/// One run in `check-world` prints no marker: ecpg's makefile calls `pg_regress` itself. Its
+/// first test line, numbered 1, comes after another run's tests, after the end of a prove run or
+/// before any marker, and it is
+/// taken as a regress run in the directory make last said it entered, relative to `root`, the
+/// top of the build tree.
 #[must_use]
-pub fn parse_sections(text: &str) -> Vec<Section> {
+pub fn parse_sections(text: &str, root: &str) -> Vec<Section> {
     let mut sections: Vec<(String, String, String)> = Vec::new();
+    let mut entered = String::new();
     for line in text.lines() {
+        if let Some(dir) = entering(line) {
+            entered = dir
+                .strip_prefix(root)
+                .map_or(dir, |d| d.trim_start_matches('/'))
+                .to_string();
+        }
         if let Some((kind, subdir)) = marker(line) {
             sections.push((subdir.to_string(), kind.to_string(), String::new()));
-        } else if let Some((.., body)) = sections.last_mut() {
+            continue;
+        }
+        let unmarked = parse_line(line.trim_end()).is_some_and(|r| r.number == 1)
+            && sections.last().is_none_or(|(_, kind, body)| {
+                if kind == "tap" {
+                    body.contains("\nResult: ")
+                } else {
+                    body.lines().any(|l| parse_line(l).is_some())
+                }
+            });
+        if unmarked {
+            sections.push((entered.clone(), "regress".to_string(), String::new()));
+        }
+        if let Some((.., body)) = sections.last_mut() {
             body.push_str(line);
             body.push('\n');
         }
     }
     sections
         .into_iter()
-        .map(|(subdir, kind, body)| Section {
-            subdir,
-            kind,
-            output: parse_regress(&body),
+        .map(|(subdir, kind, body)| {
+            let output = if kind == "tap" {
+                parse_prove(&body)
+            } else {
+                parse_regress(&body)
+            };
+            Section {
+                subdir,
+                kind,
+                output,
+            }
         })
         .collect()
+}
+
+/// The directory of a `make[2]: Entering directory '/b/src/interfaces/ecpg/test'` line.
+fn entering(line: &str) -> Option<&str> {
+    let (_, rest) = line.split_once(": Entering directory ")?;
+    let rest = rest.trim();
+    let quoted = rest
+        .strip_prefix('\'')
+        .or_else(|| rest.strip_prefix('`'))?
+        .strip_suffix('\'')?;
+    Some(quoted)
+}
+
+/// Parse what prove printed for one directory's TAP scripts, as one result per script.
+///
+/// prove prints a line per script, `t/001_initdb.pl .......... ok`, with the time after `ok` when
+/// it runs with `--timer`, and the clock in front. A script that fails ends its line, or a later
+/// line that repeats its name, with `Dubious` or `Failed N/M subtests`, and is listed again under
+/// `Test Summary Report` with its wait status. `Files=N` is the number of scripts, which serves as
+/// the plan, and `Result:` is the last thing prove prints, so a run without it did not finish.
+#[must_use]
+pub fn parse_prove(text: &str) -> RegressOutput {
+    let mut out = RegressOutput::default();
+    let mut finished = false;
+    let mut summary = false;
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.starts_with("Test Summary Report") {
+            summary = true;
+            continue;
+        }
+        if let Some(files) = line.strip_prefix("Files=") {
+            out.planned = files.split(',').next().and_then(|n| n.trim().parse().ok());
+            continue;
+        }
+        if line.starts_with("Result: ") {
+            finished = true;
+            continue;
+        }
+        if summary {
+            if let Some((script, _)) = line.split_once(" (Wstat: ") {
+                failed(&mut out, script.trim());
+            }
+            continue;
+        }
+        let Some((script, verdict)) = prove_line(line) else {
+            continue;
+        };
+        let index = match out.results.iter().position(|r| r.name == script) {
+            Some(index) => index,
+            None => {
+                out.results.push(RegressResult {
+                    number: u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX),
+                    name: script.to_string(),
+                    ok: false,
+                    parallel: false,
+                    seconds: 0.0,
+                });
+                out.results.len() - 1
+            }
+        };
+        let result = &mut out.results[index];
+        if let Some(rest) = verdict.strip_prefix("ok") {
+            result.ok = true;
+            let mut words = rest.split_whitespace();
+            if let (Some(n), Some("ms")) = (words.next(), words.next()) {
+                result.seconds = n.parse::<f64>().unwrap_or(0.0) / 1000.0;
+            }
+        } else if verdict.starts_with("skipped") {
+            result.ok = true;
+        }
+    }
+    if !finished {
+        out.bailed = Some("prove did not finish".to_string());
+    }
+    out
+}
+
+/// Mark a script failed, adding it when prove never printed its line.
+fn failed(out: &mut RegressOutput, script: &str) {
+    if let Some(result) = out.results.iter_mut().find(|r| r.name == script) {
+        result.ok = false;
+    } else {
+        out.results.push(RegressResult {
+            number: u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX),
+            name: script.to_string(),
+            ok: false,
+            parallel: false,
+            seconds: 0.0,
+        });
+    }
+}
+
+/// The script and what follows its dots in a `[04:50:33] t/001_initdb.pl ..... ok` line.
+fn prove_line(line: &str) -> Option<(&str, &str)> {
+    let line = line.trim_start();
+    let line = match line.strip_prefix('[') {
+        Some(rest) => rest.split_once("] ")?.1,
+        None => line,
+    };
+    let (script, rest) = line.split_once(' ')?;
+    if !script.starts_with("t/") || !script.ends_with(".pl") {
+        return None;
+    }
+    let verdict = rest.trim_start_matches('.');
+    if verdict.len() == rest.len() {
+        return None;
+    }
+    Some((script, verdict.trim()))
 }
 
 /// The kind and the directory of a `# +++ regress check in contrib/amcheck +++` line.
@@ -270,7 +413,7 @@ Bail out!
 
     #[test]
     fn a_log_of_many_runs_is_split_at_the_markers() {
-        let sections = parse_sections(SECTIONS);
+        let sections = parse_sections(SECTIONS, "/b");
         assert_eq!(sections.len(), 3);
         assert_eq!(sections[0].subdir, "contrib/amcheck");
         assert_eq!(sections[0].kind, "regress");
@@ -294,6 +437,105 @@ Bail out!
         assert_eq!(
             marker("  # +++ tap check in src/test/modules/test_misc +++"),
             Some(("tap", "src/test/modules/test_misc"))
+        );
+    }
+
+    const WORLD: &str = "\
+make[2]: Entering directory '/b/src/bin/initdb'
+# +++ tap check in src/bin/initdb +++
+[04:50:33] t/001_initdb.pl .......... ok     3120 ms ( 0.01 usr  0.00 sys +  1.20 cusr  0.90 csys =  2.11 CPU)
+[04:50:36] t/002_skipped.pl ......... skipped: no locale
+[04:50:36] t/003_broken.pl .......... 1/?
+#   Failed test 'the cluster starts'
+#   at t/003_broken.pl line 20.
+# Looks like you failed 1 test of 4.
+[04:50:40] t/003_broken.pl .......... Dubious, test returned 1 (wstat 256, 0x100)
+Failed 1/4 subtests
+[04:50:40]
+
+Test Summary Report
+t/003_broken.pl (Wstat: 256 (exited 1) Tests: 4 Failed: 1)
+  Failed test:  2
+  Non-zero exit status: 1
+Files=3, Tests=54,  7 wallclock secs ( 0.02 usr  0.01 sys +  2.40 cusr  1.80 csys =  4.23 CPU)
+Result: FAIL
+make[2]: Leaving directory '/b/src/bin/initdb'
+make[3]: Entering directory '/b/src/interfaces/ecpg/test'
+ok 1         - connect/test1                              91 ms
+not ok 2     - sql/twophase                               40 ms
+1..2
+make[3]: Leaving directory '/b/src/interfaces/ecpg/test'
+make[2]: Entering directory '/b/src/bin/pg_ctl'
+# +++ tap check in src/bin/pg_ctl +++
+[04:51:02] t/001_start_stop.pl ...... ok     2210 ms ( 0.01 usr  0.00 sys +  1.20 cusr  0.90 csys =  2.11 CPU)
+";
+
+    #[test]
+    fn prove_output_gives_one_result_per_script() {
+        let sections = parse_sections(WORLD, "/b");
+        assert_eq!(sections.len(), 3);
+        let initdb = &sections[0];
+        assert_eq!(initdb.kind, "tap");
+        assert_eq!(initdb.subdir, "src/bin/initdb");
+        let names: Vec<&str> = initdb
+            .output
+            .results
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["t/001_initdb.pl", "t/002_skipped.pl", "t/003_broken.pl"]
+        );
+        assert!(initdb.output.results[0].ok);
+        assert!((initdb.output.results[0].seconds - 3.12).abs() < 1e-9);
+        assert!(initdb.output.results[1].ok);
+        assert!(!initdb.output.results[2].ok);
+        assert_eq!(initdb.output.planned, Some(3));
+        assert!(initdb.output.bailed.is_none());
+    }
+
+    #[test]
+    fn a_run_without_a_marker_is_named_for_the_directory_make_entered() {
+        let sections = parse_sections(WORLD, "/b");
+        let ecpg = &sections[1];
+        assert_eq!(ecpg.subdir, "src/interfaces/ecpg/test");
+        assert_eq!(ecpg.kind, "regress");
+        assert_eq!(ecpg.output.passed(), 1);
+        assert_eq!(ecpg.output.failed(), 1);
+        assert_eq!(ecpg.output.planned, Some(2));
+    }
+
+    #[test]
+    fn a_prove_run_that_never_reached_its_result_did_not_finish() {
+        let sections = parse_sections(WORLD, "/b");
+        let pg_ctl = &sections[2];
+        assert_eq!(pg_ctl.output.passed(), 1);
+        assert_eq!(
+            pg_ctl.output.bailed.as_deref(),
+            Some("prove did not finish")
+        );
+    }
+
+    #[test]
+    fn a_script_only_in_the_summary_still_counts_as_failed() {
+        let out = parse_prove(
+            "Test Summary Report\nt/009_x.pl (Wstat: 9 Tests: 0 Failed: 0)\nFiles=1, Tests=0\nResult: FAIL\n",
+        );
+        assert_eq!(out.results.len(), 1);
+        assert_eq!(out.results[0].name, "t/009_x.pl");
+        assert!(!out.results[0].ok);
+    }
+
+    #[test]
+    fn lines_that_only_look_like_scripts_are_not_scripts() {
+        assert!(prove_line("t/001_x.pl").is_none());
+        assert!(prove_line("t/001_x.pm ... ok").is_none());
+        assert!(prove_line("# t/001_x.pl ... ok").is_none());
+        assert_eq!(prove_line("t/001_x.pl .. ok"), Some(("t/001_x.pl", "ok")));
+        assert_eq!(
+            entering("make[3]: Entering directory '/b/src'"),
+            Some("/b/src")
         );
     }
 
