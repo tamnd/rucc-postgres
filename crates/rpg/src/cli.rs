@@ -17,7 +17,13 @@ pub struct Args {
 }
 
 /// Options that take no value.
-const SWITCHES: &[&str] = &["twice", "configure-only", "no-upstream-check", "help"];
+const SWITCHES: &[&str] = &[
+    "twice",
+    "configure-only",
+    "no-upstream-check",
+    "no-fuel",
+    "help",
+];
 
 /// Options each command accepts.
 fn accepted(command: &str) -> Option<&'static [&'static str]> {
@@ -47,6 +53,9 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
             "out", "row", "records", "run", "timeout", "minutes", "clients", "scale",
         ],
         "triage" => &["out", "cores"],
+        "mixed" => &[
+            "gcc", "rucc", "suite", "check", "under", "out", "timeout", "no-fuel",
+        ],
         "help" => &[],
         _ => return None,
     })
@@ -70,6 +79,8 @@ usage:
   rpg frames --a DIR --b DIR [--a-cc PATH] [--b-cc PATH] [--out FILE] [--jobs N]
   rpg cross-modules --server DIR --modules DIR [--records FILE] [--timeout S]
   rpg triage [--out DIR] [--cores DIR]
+  rpg mixed --gcc DIR --rucc DIR [--suite S | --check CMD] [--under PREFIX,...] [--out DIR]
+            [--timeout S] [--no-fuel]
   rpg stress [--out DIR] [--row ROW] [--minutes 5] [--clients N] [--scale 10] [--records FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked

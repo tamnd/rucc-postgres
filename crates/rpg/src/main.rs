@@ -9,6 +9,7 @@ mod configdiff;
 mod cross;
 mod demands;
 mod frames;
+mod mixed;
 mod pins;
 mod process;
 mod records;
@@ -48,6 +49,7 @@ fn main() -> ExitCode {
             "cross-modules" => cross_command(&args),
             "stress" => stress_command(&repo, &args),
             "triage" => triage_command(&repo, &args),
+            "mixed" => mixed_command(&args),
             _ => unreachable!("the parser only accepts known commands"),
         }
     });
@@ -506,6 +508,60 @@ fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     for (signature, failures) in found.sorted().iter().take(10) {
         println!("  {:>5}  {signature}", failures.len());
     }
+    println!("report:    {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn mixed_command(args: &Args) -> Result<ExitCode, String> {
+    let gcc = build_dir(args, "gcc")?;
+    let rucc = build_dir(args, "rucc")?;
+    let check = match (args.get("check"), args.get("suite")) {
+        (Some(_), Some(_)) => return Err("give --check or --suite, not both".to_string()),
+        (Some(command), None) => mixed::Check::Command(command.to_string()),
+        (None, suite) => mixed::Check::Suite(suite.unwrap_or("regress").to_string()),
+    };
+    let info = build::BuildInfo::load(&gcc)?;
+    let plan = mixed::MixedPlan {
+        out: args
+            .get("out")
+            .map_or_else(|| gcc.join("mixed"), PathBuf::from),
+        under: args
+            .get("under")
+            .map(|u| u.split(',').map(str::to_string).collect())
+            .unwrap_or_default(),
+        timeout: timeout(args, None, &info.level)?,
+        fuel: !args.has("no-fuel"),
+        gcc,
+        rucc,
+        check,
+    };
+    let run = mixed::mixed(&plan)?;
+    let path = plan.out.join("mixed.md");
+    std::fs::write(&path, mixed::report(&plan, &run))
+        .map_err(|e| format!("writing {}: {e}", path.display()))?;
+    let found = &run.found;
+    if let Some(c) = &found.culprit {
+        println!(
+            "object:    {} from {}{}",
+            c.object,
+            c.file,
+            if found.alone {
+                ""
+            } else {
+                ", with the ones before it"
+            }
+        );
+    }
+    if let Some(n) = found.transformation {
+        println!("fuel:      transformation {n}");
+    }
+    if found.not_a_pass {
+        println!("fuel:      fails with no transformations, not an optimization pass");
+    }
+    if let Some(dump) = &found.dump {
+        println!("ir:        first differs in {dump}");
+    }
+    println!("trials:    {}", run.trials.len());
     println!("report:    {}", path.display());
     Ok(ExitCode::SUCCESS)
 }
