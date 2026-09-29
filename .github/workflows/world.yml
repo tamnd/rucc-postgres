@@ -335,6 +335,7 @@ jobs:
             ${{ runner.temp }}/mixed-*/ir/
             ${{ runner.temp }}/mixed-*/trial-*/*.log
             ${{ runner.temp }}/mixed-*.txt
+            ${{ runner.temp }}/gcc/test-mixed-*.log
           if-no-files-found: ignore
 
   # PG3's sixth criterion: pgbench against the server rucc built, with the balances checked

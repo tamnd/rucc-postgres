@@ -390,8 +390,15 @@ impl Runner<'_> {
                     run: u32::try_from(n).unwrap_or(u32::MAX),
                     label: Some(format!("mixed-{name}")),
                 };
-                let failing: BTreeSet<String> = suite::run(&plan)?
-                    .records
+                let records = suite::run(&plan)?.records;
+                if records.is_empty() {
+                    return Err(format!(
+                        "trial {n} ({what}) ran no tests of {name}, see the suite log under {}",
+                        self.plan.gcc.display()
+                    ));
+                }
+                eprintln!("rpg: trial {n} ran {} tests of {name}", records.len());
+                let failing: BTreeSet<String> = records
                     .into_iter()
                     .filter(|r| !matches!(r.outcome, Outcome::Passed | Outcome::Skipped))
                     .map(|r| r.test)
