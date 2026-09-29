@@ -194,7 +194,9 @@ pub fn parse_prove(text: &str) -> RegressOutput {
             continue;
         }
         if summary {
-            if let Some((name, _)) = line.split_once(" (Wstat: ") {
+            if let Some((name, status)) = line.split_once(" (Wstat: ")
+                && summary_failed(status)
+            {
                 script(&mut out, name.trim()).ok = false;
             }
             continue;
@@ -217,6 +219,17 @@ pub fn parse_prove(text: &str) -> RegressOutput {
         out.bailed = Some("prove did not finish".to_string());
     }
     out
+}
+
+/// Whether a summary line's `0 Tests: 469 Failed: 0)` says the script failed. prove also lists a
+/// script whose TODO tests passed, with a zero wait status and nothing failed, which is a pass.
+fn summary_failed(status: &str) -> bool {
+    let mut words = status.split_whitespace();
+    let wstat = words.next().unwrap_or_default();
+    let failed = status
+        .split_once("Failed: ")
+        .map_or("0", |(_, n)| n.trim_end_matches(')').trim());
+    wstat != "0" || failed != "0"
 }
 
 /// The result for a script, added when prove has not named it before.
@@ -447,6 +460,8 @@ Failed 1/4 subtests
 [04:50:40]
 
 Test Summary Report
+t/001_initdb.pl (Wstat: 0 Tests: 50 Failed: 0)
+  TODO passed:   4-6
 t/003_broken.pl (Wstat: 256 (exited 1) Tests: 4 Failed: 1)
   Failed test:  2
   Non-zero exit status: 1
@@ -518,6 +533,13 @@ make[2]: Entering directory '/b/src/bin/pg_ctl'
         assert_eq!(out.results.len(), 1);
         assert_eq!(out.results[0].name, "t/009_x.pl");
         assert!(!out.results[0].ok);
+    }
+
+    #[test]
+    fn a_summary_line_fails_a_script_only_when_its_status_says_so() {
+        assert!(!summary_failed("0 Tests: 469 Failed: 0)"));
+        assert!(summary_failed("256 (exited 1) Tests: 4 Failed: 1)"));
+        assert!(summary_failed("9 Tests: 0 Failed: 0)"));
     }
 
     #[test]

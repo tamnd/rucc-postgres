@@ -298,6 +298,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
             let (outcome, class) = match (r.ok, crashed.contains(&r.name)) {
                 (true, _) => (Outcome::Passed, None),
                 (false, true) => (Outcome::Crashed, None),
+                (false, false) if r.name.contains("/t/") => (Outcome::Failed, Some(FailClass::Tap)),
                 (false, false) => (Outcome::Failed, Some(FailClass::Diff)),
             };
             record(plan, &r.name, outcome, class, Some(r.seconds), &artifacts)
