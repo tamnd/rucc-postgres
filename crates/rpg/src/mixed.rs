@@ -641,8 +641,9 @@ fn ir_diff(
             .map(|entries| {
                 entries
                     .filter_map(Result::ok)
-                    .map(|e| e.file_name().to_string_lossy().into_owned())
-                    .filter(|n| n.ends_with(".ir"))
+                    .map(|e| e.path())
+                    .filter(|p| p.extension().is_some_and(|x| x == "ir"))
+                    .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
                     .collect()
             })
             .unwrap_or_default();
