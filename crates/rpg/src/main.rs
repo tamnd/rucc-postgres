@@ -57,15 +57,18 @@ fn main() -> ExitCode {
 fn load_pin(repo: &Repo, args: &Args) -> Result<pins::Pin, String> {
     Ok(pins::Pins::load(&repo.pins())?
         .get(args.get("pin"))?
-        .clone())
+        .clone()
+        .with_fetched_commit())
 }
 
 fn fetch(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let pin = load_pin(repo, args)?;
-    eprintln!(
-        "rpg: {} is Postgres {} at {}",
-        pin.name, pin.version, pin.commit
-    );
+    if pin.branch.is_none() {
+        eprintln!(
+            "rpg: {} is Postgres {} at {}",
+            pin.name, pin.version, pin.commit
+        );
+    }
     let source = pins::fetch(&pin, !args.has("no-upstream-check"))?;
     println!("{}", source.display());
     Ok(ExitCode::SUCCESS)

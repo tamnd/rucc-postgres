@@ -5,6 +5,11 @@
 //! or a download that was cut short can never become a build. The `.sha256` file the Postgres
 //! project publishes next to each tarball is fetched as well and has to agree with the pin, which
 //! catches a pin written down wrong as well as an archive that changed upstream.
+//!
+//! A pin can name a branch instead, `REL_19_STABLE`, for the weekly run against the next release.
+//! There is no tarball to hash, so `rpg fetch` clones the head of the branch afresh each time and
+//! writes the commit it got to `.rpg-commit` in the tree, which is the commit every build and
+//! record from that tree names.
 
 use crate::process::shell_quote;
 use crate::repo::cache_dir;
@@ -23,23 +28,33 @@ pub struct Pins {
     pub pins: Vec<Pin>,
 }
 
-/// One pinned release.
+/// One pinned release, or one branch.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Pin {
-    /// The tag, for example `REL_18_6`.
+    /// The tag, for example `REL_18_6`, or the branch.
     pub name: String,
     /// The release number, for example `18.6`.
     pub version: String,
     /// The tarball.
+    #[serde(default)]
     pub url: String,
     /// Its SHA-256, computed once and written here by hand.
+    #[serde(default)]
     pub sha256: String,
     /// Where the project publishes the same hash, checked against the one above.
     #[serde(default)]
     pub checksum_url: Option<String>,
-    /// The commit the tag points at in the Postgres repository.
+    /// The commit the tag points at in the Postgres repository. For a branch, the commit the last
+    /// `rpg fetch` got.
+    #[serde(default)]
     pub commit: String,
+    /// The branch, for a pin that follows one rather than a release.
+    #[serde(default)]
+    pub branch: Option<String>,
+    /// The repository the branch is cloned from.
+    #[serde(default)]
+    pub repository: Option<String>,
 }
 
 impl Pins {
@@ -50,9 +65,24 @@ impl Pins {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// Parse the text of `pins.toml`.
+    /// Parse the text of `pins.toml`. A release needs its URL, hash and commit, and a branch its
+    /// repository.
     pub fn parse(text: &str) -> Result<Self, String> {
-        toml::from_str(text).map_err(|e| e.to_string())
+        let pins: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+        for pin in &pins.pins {
+            let complete = if pin.branch.is_some() {
+                pin.repository.is_some()
+            } else {
+                !pin.url.is_empty() && !pin.sha256.is_empty() && !pin.commit.is_empty()
+            };
+            if !complete {
+                return Err(format!(
+                    "pin {} needs url, sha256 and commit, or branch and repository",
+                    pin.name
+                ));
+            }
+        }
+        Ok(pins)
     }
 
     /// The named pin, or the default one.
@@ -82,6 +112,17 @@ impl Pin {
     #[must_use]
     pub fn source_dir(&self) -> PathBuf {
         cache_dir().join("src").join(&self.name)
+    }
+
+    /// For a branch, take the commit from the tree the last `rpg fetch` cloned, when there is one.
+    #[must_use]
+    pub fn with_fetched_commit(mut self) -> Self {
+        if self.branch.is_some()
+            && let Ok(commit) = std::fs::read_to_string(self.source_dir().join(".rpg-commit"))
+        {
+            self.commit = commit.trim().to_string();
+        }
+        self
     }
 }
 
@@ -148,6 +189,9 @@ fn curl(url: &str, dest: &Path) -> Result<(), String> {
 /// tree is missing. Unpacking goes to a staging directory that is renamed into place at the end,
 /// so a tree that exists is a tree that was unpacked completely.
 pub fn fetch(pin: &Pin, check_upstream: bool) -> Result<PathBuf, String> {
+    if let (Some(branch), Some(repository)) = (&pin.branch, &pin.repository) {
+        return clone(pin, branch, repository);
+    }
     let archive = pin.archive_path();
     let dir = archive.parent().expect("the archive path has a parent");
     std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
@@ -183,6 +227,45 @@ pub fn fetch(pin: &Pin, check_upstream: bool) -> Result<PathBuf, String> {
     }
     unpack(&archive, &source)?;
     eprintln!("rpg: unpacked {} into {}", pin.name, source.display());
+    Ok(source)
+}
+
+/// Clone the head of a branch, one commit deep, into a staging directory that replaces the tree
+/// once the clone is complete, and write down the commit it got.
+fn clone(pin: &Pin, branch: &str, repository: &str) -> Result<PathBuf, String> {
+    let source = pin.source_dir();
+    let parent = source.parent().expect("the source path has a parent");
+    std::fs::create_dir_all(parent).map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    let staging = parent.join(format!(".{}.staging", pin.name));
+    std::fs::remove_dir_all(&staging).ok();
+    eprintln!("rpg: cloning {branch} from {repository}");
+    let output = Command::new("git")
+        .args([
+            "clone", "--quiet", "--depth", "1", "--branch", branch, repository,
+        ])
+        .arg(&staging)
+        .output()
+        .map_err(|e| format!("could not run git: {e}"))?;
+    if !output.status.success() {
+        std::fs::remove_dir_all(&staging).ok();
+        return Err(format!(
+            "git clone {branch}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let head = Command::new("git")
+        .arg("-C")
+        .arg(&staging)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .map_err(|e| format!("could not run git: {e}"))?;
+    let commit = String::from_utf8_lossy(&head.stdout).trim().to_string();
+    std::fs::write(staging.join(".rpg-commit"), format!("{commit}\n"))
+        .map_err(|e| format!("writing the commit: {e}"))?;
+    std::fs::remove_dir_all(&source).ok();
+    std::fs::rename(&staging, &source)
+        .map_err(|e| format!("moving into {}: {e}", source.display()))?;
+    eprintln!("rpg: {} is at {commit} in {}", pin.name, source.display());
     Ok(source)
 }
 
@@ -256,6 +339,29 @@ commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
             "postgresql-18.6.tar.bz2"
         );
         assert!(pins.get(Some("REL_19_0")).unwrap_err().contains("REL_18_6"));
+    }
+
+    #[test]
+    fn a_branch_pin_needs_a_repository_and_a_release_needs_its_hash() {
+        let branch = format!(
+            "{PINS}\n[[pin]]\nname = \"REL_19_STABLE\"\nversion = \"19\"\nbranch = \"REL_19_STABLE\"\nrepository = \"https://github.com/postgres/postgres.git\"\n"
+        );
+        let pins = Pins::parse(&branch).unwrap();
+        let pin = pins.get(Some("REL_19_STABLE")).unwrap();
+        assert_eq!(pin.branch.as_deref(), Some("REL_19_STABLE"));
+        assert!(pin.commit.is_empty());
+        let no_repository = format!(
+            "{PINS}\n[[pin]]\nname = \"REL_19_STABLE\"\nversion = \"19\"\nbranch = \"REL_19_STABLE\"\n"
+        );
+        assert!(
+            Pins::parse(&no_repository)
+                .unwrap_err()
+                .contains("REL_19_STABLE")
+        );
+        let no_hash = format!(
+            "{PINS}\n[[pin]]\nname = \"REL_19_0\"\nversion = \"19.0\"\nurl = \"https://x/y.tar.bz2\"\ncommit = \"abc\"\n"
+        );
+        assert!(Pins::parse(&no_hash).unwrap_err().contains("REL_19_0"));
     }
 
     #[test]
