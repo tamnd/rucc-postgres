@@ -497,10 +497,11 @@ fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     std::fs::write(&path, triage::report(&found))
         .map_err(|e| format!("writing {}: {e}", path.display()))?;
     println!(
-        "triage: {} failures in {} groups, {} core files, {} cores unread",
+        "triage: {} failures in {} groups, {} core files, {} from SIGQUIT left out, {} cores unread",
         found.failures(),
         found.groups.len(),
         found.cores,
+        found.quit.len(),
         found.unread.len()
     );
     for (signature, failures) in found.sorted().iter().take(10) {
