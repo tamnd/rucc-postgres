@@ -364,10 +364,9 @@ pub fn world_from_testlog(tests: &[MesonTest]) -> RegressOutput {
         }
         let short = test.short_name();
         let kind = short.rsplit('/').next().unwrap_or(short);
-        let mut failed_inside = false;
         if matches!(kind, "regress" | "isolation" | "ecpg") {
             let inner = parse_regress(test.stdout.as_deref().unwrap_or_default());
-            failed_inside = inner.failed() > 0;
+            let failed_inside = inner.failed() > 0;
             for mut result in inner.results {
                 result.name = format!("{short}/{}", result.name);
                 result.number = u32::try_from(out.results.len() + 1).unwrap_or(u32::MAX);
