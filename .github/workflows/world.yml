@@ -320,7 +320,7 @@ jobs:
       - name: install what configure needs
         run: |
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
-          sudo apt-get install -y meson ninja-build bison flex
+          sudo apt-get install -y libipc-run-perl meson ninja-build bison flex
       - name: install rucc
         run: |
           set -euo pipefail
