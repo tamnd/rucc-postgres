@@ -9,8 +9,8 @@
 //! failed assertion, or else the line saying which signal the backend died of. Otherwise it is the
 //! first line the test printed that it should not have, or the first it should have printed and
 //! did not, from the test's piece of the diffs. A TAP script's is the first crash in its log, or
-//! else its first failed test. Numbers become `N` and addresses `<addr>` in all of them, so that an OID or a PID does not
-//! split a group.
+//! else its first failed test. Numbers become `N` and addresses `<addr>` in all of them, so that
+//! an OID or a PID does not split a group.
 //!
 //! Core files are the other half. Each one is given to `gdb` with the executable it came from, the
 //! backtrace of every thread is written next to the report, and the core is grouped by the signal
