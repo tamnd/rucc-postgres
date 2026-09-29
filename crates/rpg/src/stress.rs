@@ -2,7 +2,7 @@
 //! lost or made up on the way.
 //!
 //! The suites run one statement at a time, or a few sessions that take turns. A compiler that
-//! gets memory ordering wrong in the lock free parts of the server, the spinlocks, the LWLock
+//! gets memory ordering wrong in the lock free parts of the server, the spinlocks, the `LWLock`
 //! wait lists, the atomics that stand in for them, passes all of that and then loses an update
 //! once in a million under real concurrency. pgbench's default script is TPC-B: each transaction
 //! moves an amount into one account, one teller and one branch and writes the amount into the
@@ -81,7 +81,6 @@ pub fn broken(sums: [i64; 4]) -> Option<String> {
 }
 
 /// What pgbench said about a run: the transactions it finished and the rate, or why it failed.
-#[must_use]
 pub fn read_pgbench(text: &str) -> Result<(u64, String), String> {
     if let Some(line) = text.lines().find(|l| l.contains(" aborted in command")) {
         return Err(line.trim().to_string());
@@ -197,6 +196,8 @@ impl Install {
                 "-XAtq",
                 "-h",
                 socket,
+                "-U",
+                "postgres",
                 "-d",
                 "postgres",
                 "-c",
@@ -326,6 +327,7 @@ pub fn run(plan: &StressPlan) -> Result<Vec<Check>, String> {
     env.insert("LD_LIBRARY_PATH".to_string(), lib.display().to_string());
     env.insert("PGHOST".to_string(), socket.display().to_string());
     env.insert("PGDATABASE".to_string(), "postgres".to_string());
+    env.insert("PGUSER".to_string(), "postgres".to_string());
     let install = Install {
         bin,
         env,
