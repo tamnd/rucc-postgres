@@ -39,6 +39,16 @@ pub struct SuitePlan {
     pub baseline: Option<Sets>,
     /// The repetition number, for baselines.
     pub run: u32,
+    /// The name the records and the results directory carry, when it is not the suite's, as for
+    /// `rpg cross-modules`, which runs `contrib` as `cross-contrib`.
+    pub label: Option<String>,
+}
+
+impl SuitePlan {
+    /// The name the records and the results directory carry.
+    fn name(&self) -> &str {
+        self.label.as_deref().unwrap_or(&self.suite)
+    }
 }
 
 /// What a run produced.
@@ -172,7 +182,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
     let artifacts = plan
         .out
         .join("results")
-        .join(&plan.suite)
+        .join(plan.name())
         .join(format!("run-{}", plan.run));
 
     if plan.info.phase != Phase::Built {
@@ -194,7 +204,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
     for stale in ["regression.out", "regression.diffs"] {
         std::fs::remove_file(pg_dir.join(stale)).ok();
     }
-    let log = |name: &str| plan.out.join(format!("test-{}-{name}.log", plan.suite));
+    let log = |name: &str| plan.out.join(format!("test-{}-{name}.log", plan.name()));
     let mut seconds = 0.0;
     let mut meson_result = None;
     let mut meson_tests = Vec::new();
@@ -499,7 +509,7 @@ fn record(
         level: info.level.clone(),
         system: info.system.clone(),
         config: info.config.clone(),
-        suite: plan.suite.clone(),
+        suite: plan.name().to_string(),
         test: test.to_string(),
         outcome,
         class,

@@ -24,6 +24,7 @@ on:
       - crates/rpg/src/suite.rs
       - crates/rpg/src/regress.rs
       - crates/rpg/src/pins.rs
+      - crates/rpg/src/cross.rs
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -175,3 +176,62 @@ jobs:
           done
           echo "$different binaries differ" | tee -a "$GITHUB_STEP_SUMMARY"
           [ "$different" = 0 ]
+
+  # PG3's third criterion: the modules built by rucc loaded into a server built by gcc, and the
+  # other way round.
+  cross-modules:
+    name: cross-modules at ${{ matrix.level }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [-O0, -O2]
+    timeout-minutes: 90
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.12.3' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what the tap tests and the build need
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      - name: build with gcc and with rucc
+        run: |
+          for cc in gcc "$RUCC"; do
+            name=$(basename "$cc")
+            ./target/release/rpg build --pin "$PIN" --cc "$cc" --level ${{ matrix.level }} --system autoconf --config minimal \
+              --out "$RUNNER_TEMP/$name" --jobs "$(nproc)"
+          done
+      - name: rucc modules in the gcc server
+        run: ./target/release/rpg cross-modules --server "$RUNNER_TEMP/gcc" --modules "$RUNNER_TEMP/rucc"
+      - name: gcc modules in the rucc server
+        if: ${{ !cancelled() }}
+        run: ./target/release/rpg cross-modules --server "$RUNNER_TEMP/rucc" --modules "$RUNNER_TEMP/gcc"
+      - name: keep the runs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-cross-modules-${{ env.PIN }}${{ matrix.level }}
+          path: |
+            ${{ runner.temp }}/gcc/results/
+            ${{ runner.temp }}/gcc/records.jsonl
+            ${{ runner.temp }}/rucc/results/
+            ${{ runner.temp }}/rucc/records.jsonl
+          if-no-files-found: ignore

@@ -34,6 +34,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "config-diff" => &["a", "b", "divergences"],
         "repro" => &["build", "file", "out", "object"],
         "frames" => &["a", "b", "a-cc", "b-cc", "out", "jobs"],
+        "cross-modules" => &["server", "modules", "records", "timeout"],
         "help" => &[],
         _ => return None,
     })
@@ -47,7 +48,7 @@ usage:
   rpg fetch [--pin NAME] [--no-upstream-check]
   rpg build --cc PATH [--level -O0|-O2] [--system meson|autoconf] [--config minimal]
             [--out DIR] [--pin NAME] [--jobs N] [--twice]
-  rpg test [--suite regress|isolation|ecpg|contrib|modules] [--out DIR] [--row ROW]
+  rpg test [--suite regress|isolation|ecpg|contrib|modules|world] [--out DIR] [--row ROW]
            [--records FILE] [--run N] [--timeout S]
   rpg baseline --row ROW [--runs 3] [--system S] [--level L] [--cc PATH] [--config C] [--pin P]
   rpg demands [--pin NAME] [--out FILE]
@@ -55,6 +56,7 @@ usage:
   rpg repro --build DIR --file PATH [--out DIR] [--object PART]
   rpg asm-audit [--pin NAME] [--out FILE]
   rpg frames --a DIR --b DIR [--a-cc PATH] [--b-cc PATH] [--out FILE] [--jobs N]
+  rpg cross-modules --server DIR --modules DIR [--records FILE] [--timeout S]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked
 sources go to RPG_CACHE, or ~/.cache/rpg. Build directories default to work/ in the repository.
