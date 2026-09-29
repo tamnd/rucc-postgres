@@ -91,24 +91,28 @@ jobs:
           sha256sum -c "$name.tar.gz.sha256"
           tar xzf "$name.tar.gz"
           echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
-      - name: rpg build
+      - name: rpg fetch
         run: |
           cargo build --release -p rpg
+          ./target/release/rpg fetch --pin REL_18_6 --no-upstream-check
+      - name: rpg build
+        id: build
+        run: |
           ./target/release/rpg build --cc "$RUCC" --level -O0 --system autoconf --config minimal \
             --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
       - name: rpg test --suite regress
         run: ./target/release/rpg test --suite regress --out "$RUNNER_TEMP/pg"
       - name: rpg test --suite isolation
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./target/release/rpg test --suite isolation --out "$RUNNER_TEMP/pg"
       - name: rpg test --suite ecpg
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./target/release/rpg test --suite ecpg --out "$RUNNER_TEMP/pg"
       - name: rpg test --suite contrib
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./target/release/rpg test --suite contrib --out "$RUNNER_TEMP/pg"
       - name: rpg test --suite modules
-        if: success() || failure()
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: ./target/release/rpg test --suite modules --out "$RUNNER_TEMP/pg"
       - name: keep the runs
         if: always()
