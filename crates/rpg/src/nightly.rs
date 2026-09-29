@@ -2,8 +2,9 @@
 //!
 //! The world job runs one row per system and level and keeps `build.json` and `records.jsonl`
 //! from each. This reads a directory holding one such pair per row and writes a night file for
-//! each row to `runs/<date>/<name>.toml`, where the name is the pin, configuration, system and
-//! level, for example `REL_18_6-minimal-autoconf-O2`. A night file holds the counts and the
+//! each row to `runs/<date>/<name>.toml`, where the name is the row, pin, configuration, system
+//! and level, for example `L64-REL_18_6-minimal-autoconf-O2`. The row comes from the records,
+//! which have it when `rpg test` was given `--row`, and is left out of the name when they do not. A night file holds the counts and the
 //! tests that did not pass, not every record, so a year of nights stays small.
 //!
 //! Each row is compared with the last night file of the same name from an earlier date. A test
@@ -28,6 +29,9 @@ const HISTORY: usize = 30;
 pub struct Night {
     /// The day, UTC.
     pub date: String,
+    /// The row, when the records name one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub row: Option<String>,
     /// The pin.
     pub pin: String,
     /// The Postgres commit the pin named.
@@ -69,6 +73,7 @@ impl Night {
         }
         Self {
             date: info.date.clone(),
+            row: records.iter().find_map(|r| r.row.clone()),
             pin: info.pin.clone(),
             commit: info.commit.clone(),
             config: info.config.clone(),
@@ -86,7 +91,11 @@ impl Night {
     /// The file name without the extension.
     #[must_use]
     pub fn name(&self) -> String {
-        format!("{}-{}-{}{}", self.pin, self.config, self.system, self.level)
+        let name = format!("{}-{}-{}{}", self.pin, self.config, self.system, self.level);
+        match &self.row {
+            Some(row) => format!("{row}-{name}"),
+            None => name,
+        }
     }
 
     fn count(&self, outcome: Outcome) -> usize {
@@ -450,11 +459,11 @@ mod tests {
     }
 
     #[test]
-    fn the_name_is_the_pin_config_system_and_level() {
-        assert_eq!(
-            night("2026-09-29", true, &[]).name(),
-            "REL_18_6-minimal-autoconf-O2"
-        );
+    fn the_name_is_the_row_pin_config_system_and_level() {
+        let mut n = night("2026-09-29", true, &[]);
+        assert_eq!(n.name(), "REL_18_6-minimal-autoconf-O2");
+        n.row = Some("LA64".to_string());
+        assert_eq!(n.name(), "LA64-REL_18_6-minimal-autoconf-O2");
     }
 
     #[test]
@@ -494,7 +503,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let runs = dir.join("runs");
         let reports = dir.join("reports");
-        let earlier = night("2026-09-28", true, &[]);
+        let mut earlier = night("2026-09-28", true, &[]);
+        earlier.row = Some("L64".to_string());
         std::fs::create_dir_all(runs.join("2026-09-28")).unwrap();
         std::fs::write(
             runs.join("2026-09-28")
@@ -516,17 +526,17 @@ mod tests {
             }
         });
         std::fs::write(row.join("build.json"), info.to_string()).unwrap();
-        let line = r#"{"project":"postgres","pin":"REL_18_6","host":"runner","level":"-O2","system":"autoconf","config":"minimal","suite":"regress","test":"int8","outcome":"failed","compiler":"rucc 0.12.3"}"#;
+        let line = r#"{"project":"postgres","pin":"REL_18_6","row":"L64","host":"runner","level":"-O2","system":"autoconf","config":"minimal","suite":"regress","test":"int8","outcome":"failed","compiler":"rucc 0.12.3"}"#;
         std::fs::write(row.join("records.jsonl"), format!("{line}\n")).unwrap();
         let recorded = record(&dir.join("nights"), &runs, &reports).unwrap();
         assert_eq!(recorded.written.len(), 1);
         assert!(
-            runs.join("2026-09-29/REL_18_6-minimal-autoconf-O2.toml")
+            runs.join("2026-09-29/L64-REL_18_6-minimal-autoconf-O2.toml")
                 .is_file()
         );
         assert_eq!(recorded.regressions(), 1);
         let text = std::fs::read_to_string(reports.join("nightly.md")).unwrap();
-        assert!(text.contains("| REL_18_6-minimal-autoconf-O2 | 2026-09-29 | rucc 0.12.3 |"));
+        assert!(text.contains("| L64-REL_18_6-minimal-autoconf-O2 | 2026-09-29 | rucc 0.12.3 |"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
