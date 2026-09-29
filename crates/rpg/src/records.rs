@@ -130,7 +130,6 @@ pub fn append(path: &Path, records: &[TestRecord]) -> Result<(), String> {
 
 /// Read records back, skipping lines that do not parse.
 #[must_use]
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn parse(text: &str) -> Vec<TestRecord> {
     text.lines()
         .filter_map(|line| serde_json::from_str(line).ok())

@@ -123,6 +123,7 @@ jobs:
             ${{ runner.temp }}/pg/triage.md
             ${{ runner.temp }}/pg/triage/
             ${{ runner.temp }}/pg/records.jsonl
+            ${{ runner.temp }}/pg/build.json
             ${{ runner.temp }}/pg/test-world-run.log
             ${{ runner.temp }}/pg/build.log
             ${{ runner.temp }}/pg/build/meson-logs/testlog.json
