@@ -258,9 +258,19 @@ pub struct Divergence {
     pub name: String,
     /// Why the difference does not change which code is compiled.
     pub why: String,
+    /// The rows of `rows.toml` the entry is for. An entry without rows is for every row.
+    #[serde(default)]
+    pub rows: Vec<String>,
 }
 
 impl Divergence {
+    /// Whether the entry applies to a comparison made on `row`. With no row given, only the
+    /// entries for every row apply.
+    #[must_use]
+    pub fn applies_to(&self, row: Option<&str>) -> bool {
+        self.rows.is_empty() || row.is_some_and(|r| self.rows.iter().any(|x| x == r))
+    }
+
     fn matches(&self, d: &Difference) -> bool {
         self.source == d.source
             && match self.name.strip_suffix('*') {
@@ -310,9 +320,15 @@ pub struct Sorted<'a> {
     pub unused: Vec<&'a Divergence>,
 }
 
-/// Match each difference against the divergences, first match wins.
+/// Match each difference against the divergences for `row`, first match wins. Entries for other
+/// rows neither explain anything nor count as unused.
 #[must_use]
-pub fn sort(differences: Vec<Difference>, divergences: &[Divergence]) -> Sorted<'_> {
+pub fn sort<'a>(
+    differences: Vec<Difference>,
+    divergences: &'a [Divergence],
+    row: Option<&str>,
+) -> Sorted<'a> {
+    let divergences: Vec<&Divergence> = divergences.iter().filter(|v| v.applies_to(row)).collect();
     let mut used = vec![false; divergences.len()];
     let mut sorted = Sorted {
         unexplained: Vec::new(),
@@ -323,7 +339,7 @@ pub fn sort(differences: Vec<Difference>, divergences: &[Divergence]) -> Sorted<
         match divergences.iter().position(|v| v.matches(&d)) {
             Some(i) => {
                 used[i] = true;
-                sorted.explained.push((d, &divergences[i]));
+                sorted.explained.push((d, divergences[i]));
             }
             None => sorted.unexplained.push(d),
         }
@@ -332,7 +348,7 @@ pub fn sort(differences: Vec<Difference>, divergences: &[Divergence]) -> Sorted<
         .iter()
         .zip(used)
         .filter(|(_, u)| !u)
-        .map(|(v, _)| v)
+        .map(|(v, _)| *v)
         .collect();
     sorted
 }
@@ -423,7 +439,7 @@ mod tests {
             &parse_makefile("CFLAGS_SL = -fPIC\nCFLAGS = -O2\n"),
             &parse_makefile("CFLAGS_SL = -fpic\nCFLAGS = -O2\n"),
         ));
-        let sorted = sort(differences, &divergences);
+        let sorted = sort(differences, &divergences, None);
         let unexplained: Vec<&str> = sorted.unexplained.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(unexplained, ["HAVE_X"]);
         let explained: Vec<&str> = sorted
@@ -434,6 +450,25 @@ mod tests {
         assert_eq!(explained, ["PG_VERSION_STR", "CFLAGS_SL"]);
         assert_eq!(sorted.unused.len(), 1);
         assert_eq!(sorted.unused[0].name, "never");
+    }
+
+    #[test]
+    fn a_divergence_for_one_row_explains_nothing_on_another() {
+        let divergences = parse_divergences(
+            "[[divergence]]\nsource = \"pg_config.h\"\nname = \"USE_SVE_POPCNT_WITH_RUNTIME_CHECK\"\nrows = [\"LA64\"]\nwhy = \"no arm_sve.h\"\n",
+        )
+        .expect("parses");
+        let a = parse_defines("#define USE_SVE_POPCNT_WITH_RUNTIME_CHECK 1\n");
+        let b = parse_defines("/* #undef USE_SVE_POPCNT_WITH_RUNTIME_CHECK */\n");
+        let on_arm = sort(diff_defines(&a, &b), &divergences, Some("LA64"));
+        assert!(on_arm.unexplained.is_empty());
+        assert_eq!(on_arm.explained.len(), 1);
+        let on_x86 = sort(diff_defines(&a, &b), &divergences, Some("L64"));
+        assert_eq!(on_x86.unexplained.len(), 1);
+        assert!(on_x86.unused.is_empty());
+        let nowhere = sort(diff_defines(&a, &b), &divergences, None);
+        assert_eq!(nowhere.unexplained.len(), 1);
+        assert!(nowhere.unused.is_empty());
     }
 
     #[test]

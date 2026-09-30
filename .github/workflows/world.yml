@@ -415,11 +415,12 @@ jobs:
   # The first box of PG3's rucc list: a probe rucc answers differently from gcc under meson, the
   # way PG1 checked autoconf. Configure alone with each compiler, then compare what they decided.
   probes:
-    name: probes under ${{ matrix.system }}
-    runs-on: ubuntu-24.04
+    name: probes on ${{ matrix.row }} under ${{ matrix.system }}
+    runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
+        row: [L64, LA64]
         system: [autoconf, meson]
     timeout-minutes: 30
     env:
@@ -435,7 +436,7 @@ jobs:
       - name: install rucc
         run: |
           set -euo pipefail
-          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          name="rucc-v$RUCC_VERSION-$(uname -m)-unknown-linux-gnu"
           cd "$RUNNER_TEMP"
           base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
           curl -fsSLO "$base/$name.tar.gz"
@@ -448,7 +449,7 @@ jobs:
           cargo build --release --workspace
           ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
       # gcc-14 rather than the runner's gcc 13, which does not have -Wmissing-variable-declarations
-      # and so answers that probe differently from rucc and from the gcc-16 of the L64 row.
+      # and so answers that probe differently from rucc and from the gcc-16 the rows name.
       - name: configure with gcc and with rucc
         run: |
           for cc in gcc-14 "$RUCC"; do
@@ -458,12 +459,12 @@ jobs:
       - name: rpg config-diff
         run: |
           set -o pipefail
-          ./target/release/rpg config-diff --a "$RUNNER_TEMP/gcc-14" --b "$RUNNER_TEMP/rucc" | tee "$RUNNER_TEMP/diff.txt"
+          ./target/release/rpg config-diff --a "$RUNNER_TEMP/gcc-14" --b "$RUNNER_TEMP/rucc" --row ${{ matrix.row }} | tee "$RUNNER_TEMP/diff.txt"
       - name: summary
         if: always()
         run: |
           {
-            echo "### $PIN probes under ${{ matrix.system }}, gcc-14 against rucc $RUCC_VERSION"
+            echo "### $PIN probes on ${{ matrix.row }} under ${{ matrix.system }}, gcc-14 against rucc $RUCC_VERSION"
             echo
             echo '```'
             cat "$RUNNER_TEMP/diff.txt" 2>/dev/null || echo "rpg config-diff did not run"
@@ -473,7 +474,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-probes-${{ env.PIN }}-${{ matrix.system }}
+          name: rpg-probes-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}
           path: |
             ${{ runner.temp }}/gcc-14/configure.log
             ${{ runner.temp }}/rucc/configure.log

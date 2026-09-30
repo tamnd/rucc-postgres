@@ -4,7 +4,9 @@
 # An entry is `source`, which is `pg_config.h`, `Makefile.global` or `probe`, the `name` of the
 # define, variable or question, and `why`. A name ending in `*` matches every name that starts
 # with the part before it. A difference with no entry fails the comparison, and an entry that
-# matched nothing is printed so it can be taken out.
+# matched nothing is printed so it can be taken out. An entry may add `rows`, the rows of rows.toml
+# it is for, when the difference belongs to one platform; `rpg config-diff --row` picks them, and
+# an entry without `rows` is for every row.
 
 [[divergence]]
 source = "pg_config.h"
@@ -35,3 +37,28 @@ why = "meson tries the C23 keyword first. It is a keyword in rucc's default C23 
 source = "probe"
 name = "Checking if \"__typeof_unqual__\" compiles"
 why = "meson only asks for the GNU spelling when the C23 keyword failed, so under rucc it never asks."
+
+# LA64 and REL_18_STABLE's SVE popcount. configure and meson compile a use of the arm_sve.h
+# intrinsics, svcnt_u64_x, svadd_u64_x and the rest, and when it builds Postgres compiles
+# pg_popcount_aarch64.c's SVE path and picks it at run time on a CPU that has SVE. rucc has no
+# arm_sve.h and no sizeless types yet, so the probe stops at the missing header, the define is
+# left out, and pg_popcount_aarch64.c takes its NEON path on every CPU. That is a slower popcount
+# on SVE hardware and the same answers. The CRC32C probes agree on LA64: both compilers need
+# -march=armv8-a+crc+simd and get the ARMv8 CRC instructions with a runtime check.
+[[divergence]]
+source = "pg_config.h"
+name = "USE_SVE_POPCNT_WITH_RUNTIME_CHECK"
+rows = ["LA64"]
+why = "rucc has no arm_sve.h yet, so the SVE popcount probe fails at the missing header and pg_popcount_aarch64.c takes its NEON path, which gcc's build also takes on a CPU without SVE."
+
+[[divergence]]
+source = "probe"
+name = "for svcnt_x"
+rows = ["LA64"]
+why = "configure's SVE popcount probe includes arm_sve.h, which rucc does not have yet. See the pg_config.h entry."
+
+[[divergence]]
+source = "probe"
+name = "Checking if \"SVE popcount\" : links"
+rows = ["LA64"]
+why = "meson's SVE popcount probe includes arm_sve.h, which rucc does not have yet. See the pg_config.h entry."
