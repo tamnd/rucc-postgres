@@ -4,8 +4,10 @@
 //! from each. This reads a directory holding one such pair per row and writes a night file for
 //! each row to `runs/<date>/<name>.toml`, where the name is the row, pin, configuration, system
 //! and level, for example `L64-REL_18_6-minimal-autoconf-O2`. The row comes from the records,
-//! which have it when `rpg test` was given `--row`, and is left out of the name when they do not. A night file holds the counts and the
-//! tests that did not pass, not every record, so a year of nights stays small.
+//! which have it when `rpg test` was given `--row`, or else from the artifact's name,
+//! `rpg-world-<row>-...`, since a build that stopped leaves no records to say, and is left out of
+//! the name when neither does. A night file holds the counts and the tests that did not pass, not
+//! every record, so a year of nights stays small.
 //!
 //! Each row is compared with the last night file of the same name from an earlier date. A test
 //! that does not pass tonight and was not on the earlier night's list is a regression, and so is
@@ -211,6 +213,19 @@ fn rows(dir: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(found)
 }
 
+/// The row an artifact directory is named for, `rpg-world-<row>-...`, for a row whose records
+/// do not say, which is every row whose build stopped before a test ran.
+fn artifact_row(dir: &Path) -> Option<String> {
+    let name = dir.file_name()?.to_str()?;
+    let row = name.strip_prefix("rpg-world-")?.split('-').next()?;
+    let looks_like_a_row = !row.is_empty()
+        && !row.starts_with("REL")
+        && row
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
+    looks_like_a_row.then(|| row.to_string())
+}
+
 /// What one run of `rpg nightly` did.
 #[derive(Debug, Default)]
 pub struct Recorded {
@@ -240,7 +255,10 @@ pub fn record(nights: &Path, runs: &Path, reports: &Path) -> Result<Recorded, St
         let records = std::fs::read_to_string(dir.join("records.jsonl"))
             .map(|text| parse(&text))
             .unwrap_or_default();
-        let night = Night::from_row(&info, &records);
+        let mut night = Night::from_row(&info, &records);
+        if night.row.is_none() {
+            night.row = artifact_row(&dir);
+        }
         let name = night.name();
         let earlier = before
             .get(&name)
@@ -456,6 +474,23 @@ mod tests {
         assert!(change.build);
         assert!(change.regressed.is_empty());
         assert!(change.is_regression());
+    }
+
+    #[test]
+    fn a_row_that_did_not_build_is_named_by_its_artifact() {
+        assert_eq!(
+            artifact_row(Path::new("/n/rpg-world-M64-REL_18_6-autoconf-O0")).as_deref(),
+            Some("M64")
+        );
+        assert_eq!(
+            artifact_row(Path::new("/n/rpg-world-LA64-REL_19_STABLE-autoconf-O2")).as_deref(),
+            Some("LA64")
+        );
+        assert_eq!(
+            artifact_row(Path::new("/n/rpg-world-REL_18_6-autoconf-O2")),
+            None
+        );
+        assert_eq!(artifact_row(Path::new("/n/something-else")), None);
     }
 
     #[test]

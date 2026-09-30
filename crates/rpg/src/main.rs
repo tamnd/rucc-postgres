@@ -496,12 +496,35 @@ fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let cores = args
         .get("cores")
         .map_or_else(|| out.join("cores"), PathBuf::from);
-    let found = triage::triage(&out, &cores);
+    // macOS keeps crash reports rather than cores. A report counts when it was written after the
+    // build finished, which is when the run that could have crashed started, unless --since
+    // gives the moment in seconds since the epoch.
+    let reports = args
+        .get("reports")
+        .map(PathBuf::from)
+        .or_else(|| {
+            cfg!(target_os = "macos")
+                .then(triage::diagnostic_reports)
+                .flatten()
+        })
+        .map(|dir| -> Result<triage::Reports, String> {
+            let since = match args.get("since") {
+                Some(_) => {
+                    std::time::UNIX_EPOCH + std::time::Duration::from_secs(args.number("since", 0)?)
+                }
+                None => std::fs::metadata(out.join("build.json"))
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH),
+            };
+            Ok(triage::Reports { dir, since })
+        })
+        .transpose()?;
+    let found = triage::triage(&out, &cores, reports.as_ref());
     let path = out.join("triage.md");
     std::fs::write(&path, triage::report(&found))
         .map_err(|e| format!("writing {}: {e}", path.display()))?;
     println!(
-        "triage: {} failures in {} groups, {} core files, {} from SIGQUIT left out, {} cores unread",
+        "triage: {} failures in {} groups, {} core files or crash reports, {} from SIGQUIT left out, {} unread",
         found.failures(),
         found.groups.len(),
         found.cores,

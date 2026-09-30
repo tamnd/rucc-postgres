@@ -1,0 +1,34 @@
+{"app_name":"postgres","timestamp":"2026-09-30 10:11:12.00 +0000","app_version":"","slice_uuid":"5a2d3a0e-1c9b-3e61-9c55-0d1f6f3c2b7a","build_version":"","platform":1,"share_with_app_devs":0,"is_first_party":1,"bug_type":"309","os_version":"macOS 15.6 (24G84)","roots_installed":0,"incident_id":"8F7C2D11-4A3B-4E0C-9D1E-2B6A7C8D9E0F","name":"postgres"}
+{
+  "uptime" : 1200,
+  "procRole" : "Unspecified",
+  "version" : 2,
+  "userID" : 501,
+  "deployVersion" : 210,
+  "modelCode" : "VirtualMac2,1",
+  "coalitionID" : 812,
+  "osVersion" : {
+    "train" : "macOS 15.6",
+    "build" : "24G84",
+    "releaseType" : "User"
+  },
+  "captureTime" : "2026-09-30 10:11:11.9876 +0000",
+  "incident" : "8F7C2D11-4A3B-4E0C-9D1E-2B6A7C8D9E0F",
+  "pid" : 4251,
+  "cpuType" : "ARM-64",
+  "procName" : "postgres",
+  "procPath" : "\/Users\/runner\/work\/_temp\/pg\/build\/tmp_install\/usr\/local\/pgsql\/bin\/postgres",
+  "parentProc" : "postgres",
+  "parentPid" : 4242,
+  "exception" : {"codes":"0x0000000000000001, 0x0000000000000000","rawCodes":[1,0],"type":"EXC_BAD_ACCESS","signal":"SIGSEGV","subtype":"KERN_INVALID_ADDRESS at 0x0000000000000000"},
+  "termination" : {"flags":0,"code":11,"namespace":"SIGNAL","indicator":"Segmentation fault: 11","byProc":"exc handler","byPid":4251},
+  "vmregioninfo" : "0 is not in any region.",
+  "faultingThread" : 0,
+  "threads" : [{"triggered":true,"id":90210,"threadState":{"pc":{"value":4298113220}},"queue":"com.apple.main-thread","frames":[{"imageOffset":1834692,"symbol":"ExecInterpExpr","symbolLocation":212,"imageIndex":0},{"imageOffset":1712004,"symbol":"ExecProject","symbolLocation":64,"imageIndex":0},{"imageOffset":1700100,"imageIndex":0},{"imageOffset":1698000,"symbol":"ExecScan","symbolLocation":180,"imageIndex":0},{"imageOffset":27544,"symbol":"start","symbolLocation":2840,"imageIndex":1}]},{"id":90211,"frames":[{"imageOffset":4600,"symbol":"__select","symbolLocation":8,"imageIndex":2}]}],
+  "usedImages" : [
+  {"source":"P","arch":"arm64","base":4296278016,"size":9404416,"uuid":"5a2d3a0e-1c9b-3e61-9c55-0d1f6f3c2b7a","path":"\/Users\/runner\/work\/_temp\/pg\/build\/tmp_install\/usr\/local\/pgsql\/bin\/postgres","name":"postgres"},
+  {"source":"P","arch":"arm64e","base":6443106304,"size":636112,"uuid":"3d05845f-3f65-358f-9ebf-2236e772ac01","path":"\/usr\/lib\/dyld","name":"dyld"},
+  {"source":"P","arch":"arm64e","base":6446092288,"size":243284,"uuid":"e9b8d2b2-5a1c-3a4b-9e2f-1c2d3e4f5a6b","path":"\/usr\/lib\/system\/libsystem_kernel.dylib","name":"libsystem_kernel.dylib"}
+  ],
+  "sharedCache" : {"base":6442450944,"size":4865835008,"uuid":"8a2b3c4d-5e6f-3a7b-8c9d-0e1f2a3b4c5d"}
+}

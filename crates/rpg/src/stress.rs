@@ -229,7 +229,7 @@ fn temp_install(plan: &SuitePlan, dir: &Path) -> Result<PathBuf, String> {
     } else {
         Step::new(
             "make temp-install",
-            "make",
+            crate::process::make(),
             &build_dir,
             &dir.join("install.log"),
         )
