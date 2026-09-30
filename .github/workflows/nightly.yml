@@ -26,7 +26,11 @@ env:
 jobs:
   record:
     name: record the night
-    if: github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    # A run started by hand on a branch is a trial of that branch, not a night of main.
+    if: >-
+      github.event.workflow_run.event != 'pull_request' &&
+      github.event.workflow_run.conclusion != 'cancelled' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

@@ -18,12 +18,20 @@
 //! apart and not counted: Postgres sends that signal to every child on an immediate shutdown and
 //! to every other backend after one crashes, so such a core is expected, and the crash that
 //! caused it has a core of its own.
+//!
+//! macOS writes no core files unless asked, and writes a crash report instead: a `.ips` file under
+//! `~/Library/Logs/DiagnosticReports` for every process that dies of a signal. On macOS those take
+//! the place of cores. The reports written since the run started by a Postgres program, one under
+//! the build directory or one of the names Postgres installs, are read, the faulting thread's
+//! frames are written next to the report, and the crash is grouped by its signal and the top three
+//! of those frames, the same way a core is.
 
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::SystemTime;
 
 /// One failure: which test, and the file its signature came from.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -41,7 +49,7 @@ pub struct Triage {
     pub groups: BTreeMap<String, Vec<Failure>>,
     /// Core files that could not be read, with the reason.
     pub unread: Vec<(String, String)>,
-    /// How many core files were read.
+    /// How many core files and crash reports were read.
     pub cores: usize,
     /// Cores from `SIGQUIT`, by file name, which are not failures.
     pub quit: Vec<String>,
@@ -208,6 +216,199 @@ pub fn core_program(name: &str) -> Option<PathBuf> {
         .then(|| PathBuf::from(path.replace('!', "/")))
 }
 
+/// A macOS crash report, the parts of it triage uses.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CrashReport {
+    /// The process's name, `procName`.
+    pub program: String,
+    /// Its executable, `procPath`.
+    pub path: String,
+    /// Its PID.
+    pub pid: Option<u64>,
+    /// The signal, such as `SIGSEGV`, or the exception type when the report names no signal.
+    pub signal: String,
+    /// The exception's subtype, such as `KERN_INVALID_ADDRESS at 0x0`, when there is one.
+    pub subtype: Option<String>,
+    /// The faulting thread's frames, innermost first: the symbol when the report has one, and
+    /// otherwise the image and the offset into it.
+    pub frames: Vec<String>,
+}
+
+impl CrashReport {
+    /// The signature, in the shape of a core's: the signal and the top three frames.
+    #[must_use]
+    pub fn signature(&self) -> String {
+        let stack = if self.frames.is_empty() {
+            "no frames".to_string()
+        } else {
+            self.frames
+                .iter()
+                .take(3)
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(" < ")
+        };
+        format!(
+            "crash report of {}, {} in {stack}",
+            self.program, self.signal
+        )
+    }
+
+    /// What goes next to the report under `triage/`.
+    #[must_use]
+    pub fn text(&self) -> String {
+        let mut text = format!("process: {}\npath:    {}\n", self.program, self.path);
+        if let Some(pid) = self.pid {
+            let _ = writeln!(text, "pid:     {pid}");
+        }
+        let _ = writeln!(text, "signal:  {}", self.signal);
+        if let Some(subtype) = &self.subtype {
+            let _ = writeln!(text, "subtype: {subtype}");
+        }
+        text.push_str("\nThe faulting thread:\n");
+        for (at, frame) in self.frames.iter().enumerate() {
+            let _ = writeln!(text, "#{at:<3} {frame}");
+        }
+        text
+    }
+}
+
+/// Read a `.ips` crash report.
+///
+/// Since macOS 12 a report is two JSON documents, a line of header with `bug_type` and the
+/// process's name, then the report proper with `procName`, `procPath`, `exception`,
+/// `faultingThread`, `threads` and `usedImages`. A frame names its symbol when the image has
+/// one, and otherwise only the image, by index into `usedImages`, and an offset into it. Reports
+/// of other kinds, such as hangs, have another `bug_type` and are not crashes.
+pub fn parse_ips(text: &str) -> Result<CrashReport, String> {
+    let (header, body) = text.split_once('\n').unwrap_or(("", text));
+    let header: serde_json::Value = serde_json::from_str(header).unwrap_or_default();
+    let body: serde_json::Value = serde_json::from_str(body)
+        .or_else(|_| serde_json::from_str(text))
+        .map_err(|e| format!("not a JSON crash report: {e}"))?;
+    if let Some(kind) = header.get("bug_type").and_then(serde_json::Value::as_str)
+        && kind != "309"
+    {
+        return Err(format!(
+            "a report of kind {kind}, which is not a crash (309)"
+        ));
+    }
+    let string = |v: &serde_json::Value, key: &str| {
+        v.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    let program = string(&body, "procName")
+        .or_else(|| string(&header, "app_name"))
+        .or_else(|| string(&header, "name"))
+        .ok_or("the report names no process")?;
+    let exception = body.get("exception").cloned().unwrap_or_default();
+    let signal = string(&exception, "signal")
+        .or_else(|| string(&exception, "type"))
+        .unwrap_or_else(|| "an unknown signal".to_string());
+    let threads = body
+        .get("threads")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let faulting = body
+        .get("faultingThread")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|i| usize::try_from(i).ok())
+        .and_then(|i| threads.get(i))
+        .or_else(|| {
+            threads.iter().find(|t| {
+                t.get("triggered")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false)
+            })
+        });
+    let images = body
+        .get("usedImages")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let frames = faulting
+        .and_then(|t| t.get("frames"))
+        .and_then(serde_json::Value::as_array)
+        .map(|frames| {
+            frames
+                .iter()
+                .map(|frame| {
+                    if let Some(symbol) = string(frame, "symbol") {
+                        return symbol;
+                    }
+                    let image = frame
+                        .get("imageIndex")
+                        .and_then(serde_json::Value::as_u64)
+                        .and_then(|i| usize::try_from(i).ok())
+                        .and_then(|i| images.get(i))
+                        .and_then(|i| string(i, "name"))
+                        .unwrap_or_else(|| "<unknown image>".to_string());
+                    let offset = frame
+                        .get("imageOffset")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0);
+                    format!("{image}+{offset:#x}")
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(CrashReport {
+        program,
+        path: string(&body, "procPath").unwrap_or_default(),
+        pid: body.get("pid").and_then(serde_json::Value::as_u64),
+        signal,
+        subtype: string(&exception, "subtype"),
+        frames,
+    })
+}
+
+/// The programs a Postgres build installs or runs its tests with, other than the `pg_` ones.
+const PROGRAMS: [&str; 16] = [
+    "postgres",
+    "postmaster",
+    "initdb",
+    "psql",
+    "pgbench",
+    "ecpg",
+    "isolationtester",
+    "createdb",
+    "dropdb",
+    "createuser",
+    "dropuser",
+    "clusterdb",
+    "reindexdb",
+    "vacuumdb",
+    "vacuumlo",
+    "oid2name",
+];
+
+/// Whether a crash report is from Postgres: an executable under the build directory, or a
+/// program Postgres installs, by name.
+#[must_use]
+pub fn is_postgres(report: &CrashReport, out: &Path) -> bool {
+    (!report.path.is_empty() && Path::new(&report.path).starts_with(out))
+        || report.program.starts_with("pg_")
+        || PROGRAMS.contains(&report.program.as_str())
+}
+
+/// Where macOS keeps the crash reports of the user's processes.
+#[must_use]
+pub fn diagnostic_reports() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Logs/DiagnosticReports"))
+}
+
+/// Crash reports to read: the directory, and the moment the run started, before which a report
+/// is from something else.
+#[derive(Debug, Clone)]
+pub struct Reports {
+    /// Usually `~/Library/Logs/DiagnosticReports`.
+    pub dir: PathBuf,
+    /// Reports older than this are left out.
+    pub since: SystemTime,
+}
+
 /// Every file under a directory, sorted, so the report comes out the same each time.
 fn files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
@@ -237,9 +438,10 @@ fn not_tap(name: &str) -> bool {
         || name.ends_with(".postmaster.log")
 }
 
-/// Group the failures a build directory's `results/` holds, and the cores in `cores`, writing each
-/// core's backtrace into `<out>/triage/`.
-pub fn triage(out: &Path, cores: &Path) -> Triage {
+/// Group the failures a build directory's `results/` holds, the cores in `cores` and the crash
+/// reports in `reports`, writing each core's backtrace and each report's frames into
+/// `<out>/triage/`.
+pub fn triage(out: &Path, cores: &Path, reports: Option<&Reports>) -> Triage {
     let mut triage = Triage::default();
     let relative = |p: &Path| p.strip_prefix(out).unwrap_or(p).display().to_string();
     let read = |p: &Path| std::fs::read_to_string(p).unwrap_or_default();
@@ -333,7 +535,66 @@ pub fn triage(out: &Path, cores: &Path) -> Triage {
         triage.cores += 1;
         triage.add(core_signature(&short, &backtrace), name, relative(&trace));
     }
+    if let Some(reports) = reports {
+        crash_reports(&mut triage, out, reports);
+    }
     triage
+}
+
+/// Add the Postgres crash reports written since the run started.
+fn crash_reports(triage: &mut Triage, out: &Path, reports: &Reports) {
+    let traces = out.join("triage");
+    for found in files(&reports.dir) {
+        let path = found.as_path();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if path.extension().is_none_or(|e| e != "ips") {
+            continue;
+        }
+        let recent = std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t >= reports.since);
+        if !recent {
+            continue;
+        }
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) => {
+                triage.unread.push((name, e.to_string()));
+                continue;
+            }
+        };
+        // Other programs crash on a machine too, and their reports are none of this run's
+        // business, so a report is only counted as unread when it may be Postgres's.
+        let report = match parse_ips(&text) {
+            Ok(report) => report,
+            Err(e) => {
+                if PROGRAMS.iter().any(|p| name.starts_with(p)) || name.starts_with("pg_") {
+                    triage.unread.push((name, e));
+                }
+                continue;
+            }
+        };
+        if !is_postgres(&report, out) {
+            continue;
+        }
+        std::fs::create_dir_all(&traces).ok();
+        let trace = traces.join(format!("{name}.txt"));
+        std::fs::write(&trace, report.text()).ok();
+        if report.signal == "SIGQUIT" {
+            triage.quit.push(name);
+            continue;
+        }
+        triage.cores += 1;
+        let file = relative_to(out, &trace);
+        triage.add(report.signature(), name, file);
+    }
+}
+
+fn relative_to(out: &Path, path: &Path) -> String {
+    path.strip_prefix(out).unwrap_or(path).display().to_string()
 }
 
 /// The most names a group lists before it says how many more there are.
@@ -346,7 +607,7 @@ pub fn report(triage: &Triage) -> String {
     let groups = triage.sorted();
     let _ = writeln!(
         text,
-        "{} failures in {} groups, {} of them core files.",
+        "{} failures in {} groups, {} of them core files or crash reports.",
         triage.failures(),
         groups.len(),
         triage.cores,
@@ -370,7 +631,7 @@ pub fn report(triage: &Triage) -> String {
         }
     }
     if !triage.unread.is_empty() {
-        text.push_str("\n## Cores that could not be read\n\n");
+        text.push_str("\n## Cores and crash reports that could not be read\n\n");
         for (name, why) in &triage.unread {
             let _ = writeln!(text, "- {name}: {why}");
         }
@@ -493,6 +754,97 @@ Thread 1 (Thread 0x7f00 (LWP 4251)):
         assert_eq!(core_program("core"), None);
     }
 
+    const IPS: &str = include_str!("testdata/postgres-segv.ips");
+
+    #[test]
+    fn a_crash_report_gives_the_faulting_threads_frames() {
+        let report = parse_ips(IPS).unwrap();
+        assert_eq!(report.program, "postgres");
+        assert_eq!(report.pid, Some(4251));
+        assert_eq!(report.signal, "SIGSEGV");
+        assert_eq!(
+            report.subtype.as_deref(),
+            Some("KERN_INVALID_ADDRESS at 0x0000000000000000")
+        );
+        assert_eq!(
+            report.frames,
+            [
+                "ExecInterpExpr",
+                "ExecProject",
+                "postgres+0x19f104",
+                "ExecScan",
+                "start"
+            ]
+        );
+        assert_eq!(
+            report.signature(),
+            "crash report of postgres, SIGSEGV in ExecInterpExpr < ExecProject < postgres+0x19f104"
+        );
+        assert!(report.text().contains("#0   ExecInterpExpr\n"));
+    }
+
+    #[test]
+    fn a_report_that_is_not_a_crash_or_not_json_is_refused() {
+        let hang = IPS.replacen("\"bug_type\":\"309\"", "\"bug_type\":\"288\"", 1);
+        assert!(parse_ips(&hang).unwrap_err().contains("288"));
+        assert!(parse_ips("not json\nat all").is_err());
+        // Without the header line, the body alone still reads.
+        let body = IPS.split_once('\n').unwrap().1;
+        assert_eq!(parse_ips(body).unwrap().program, "postgres");
+    }
+
+    #[test]
+    fn only_postgres_programs_count() {
+        let out = Path::new("/Users/runner/work/_temp/pg");
+        let mut report = parse_ips(IPS).unwrap();
+        assert!(is_postgres(&report, out));
+        report.program = "a.out".into();
+        assert!(is_postgres(&report, out), "under the build directory");
+        report.path = "/Applications/Safari.app/Contents/MacOS/Safari".into();
+        report.program = "Safari".into();
+        assert!(!is_postgres(&report, out));
+        report.program = "pg_dump".into();
+        assert!(is_postgres(&report, out));
+    }
+
+    #[test]
+    fn crash_reports_since_the_run_started_are_grouped() {
+        let out = std::env::temp_dir().join(format!("rpg-triage-ips-{}", std::process::id()));
+        let dir = out.join("DiagnosticReports");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("postgres-2026-09-30-101112.ips"), IPS).unwrap();
+        std::fs::write(
+            dir.join("Safari-2026-09-30-101113.ips"),
+            IPS.replace("\"procName\" : \"postgres\"", "\"procName\" : \"Safari\"")
+                .replace("_temp\\/pg\\/build", "elsewhere"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("notes.txt"), "not a report").unwrap();
+        let reports = Reports {
+            dir: dir.clone(),
+            since: SystemTime::UNIX_EPOCH,
+        };
+        let found = triage(&out, &out.join("cores"), Some(&reports));
+        let later = Reports {
+            dir,
+            since: SystemTime::now() + std::time::Duration::from_secs(3600),
+        };
+        let none = triage(&out, &out.join("cores"), Some(&later));
+        std::fs::remove_dir_all(&out).ok();
+        assert_eq!(found.cores, 1);
+        assert_eq!(found.failures(), 1);
+        let sorted = found.sorted();
+        assert_eq!(
+            sorted[0].0,
+            "crash report of postgres, SIGSEGV in ExecInterpExpr < ExecProject < postgres+0x19f104"
+        );
+        assert_eq!(
+            sorted[0].1[0].file,
+            "triage/postgres-2026-09-30-101112.ips.txt"
+        );
+        assert_eq!(none.cores, 0);
+    }
+
     #[test]
     fn a_crash_puts_every_test_of_its_run_in_one_group() {
         let out = std::env::temp_dir().join(format!("rpg-triage-{}", std::process::id()));
@@ -517,7 +869,7 @@ Thread 1 (Thread 0x7f00 (LWP 4251)):
         )
         .unwrap();
         std::fs::write(tap.join("check.log"), "make check-world\n").unwrap();
-        let triage = triage(&out, &out.join("cores"));
+        let triage = triage(&out, &out.join("cores"), None);
         std::fs::remove_dir_all(&out).ok();
         assert_eq!(triage.failures(), 3);
         let sorted = triage.sorted();

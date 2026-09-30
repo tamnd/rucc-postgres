@@ -453,8 +453,13 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
                 "-j".to_string(),
                 plan.jobs.to_string(),
             ]),
-            System::Autoconf => Step::new("make world-bin", "make", &build_dir, &build_log)
-                .args([format!("-j{}", plan.jobs), "world-bin".to_string()]),
+            System::Autoconf => Step::new(
+                "make world-bin",
+                crate::process::make(),
+                &build_dir,
+                &build_log,
+            )
+            .args([format!("-j{}", plan.jobs), "world-bin".to_string()]),
         }
         .envs(&env);
         step.unset.clone_from(&unset);

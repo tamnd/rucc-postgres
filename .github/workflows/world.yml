@@ -2,7 +2,8 @@
 # included, on Postgres built by a released rucc at -O0 and -O2 with the minimal configuration and
 # the PG_TEST_EXTRA the exit criterion names. They take too long for every pull request, so they
 # run each night on the default pin, each Monday on the head of REL_19_STABLE, by hand, and on the
-# pull requests that change how the suites run or are read.
+# pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
+# row alone.
 name: world
 
 on:
@@ -18,6 +19,11 @@ on:
       pin:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
+      rows:
+        description: every job, or only the M64 row
+        type: choice
+        options: [all, M64]
+        default: all
   pull_request:
     paths:
       - .github/workflows/world.yml
@@ -48,6 +54,7 @@ jobs:
   # that what AArch64 is missing shows up before that milestone starts.
   world:
     name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}
+    if: inputs.rows != 'M64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -141,11 +148,120 @@ jobs:
             ${{ runner.temp }}/pg/build/meson-logs/testlog.json
           if-no-files-found: ignore
 
+  # M64, PG5's row: macOS arm64 under autoconf, graded against Apple Clang, with crash reports
+  # from ~/Library/Logs/DiagnosticReports in place of cores. rucc's Darwin driver does not take
+  # -bundle, -bundle_loader, -dynamiclib, -install_name or -exported_symbols_list yet
+  # (tamnd/rucc#2010), so the build stops at the first link of a loadable module until a release
+  # has them. Until then the row runs each night and by hand, not on pull requests, and a failure
+  # here does not fail the run. continue-on-error comes out once a release with #2010 builds it.
+  world-m64:
+    name: world on M64 under autoconf at ${{ matrix.level }}
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [-O0, -O2]
+    timeout-minutes: 240
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+      PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      # Homebrew's bison and flex, as upstream's CI uses, which are keg only and so go on the
+      # path by hand. GNU make 4 as gmake, since the system's 3.81 has no -O. IPC::Run for the
+      # TAP tests into a local lib for the perl configure finds.
+      - name: install what the tap tests and the build need
+        run: |
+          set -euo pipefail
+          brew install bison flex make
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$HOME/perl5" IPC::Run
+          echo "PERL5LIB=$HOME/perl5/lib/perl5" >> "$GITHUB_ENV"
+          echo "JOBS=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+          xcrun --show-sdk-path
+          clang --version | head -1
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-aarch64-apple-darwin"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          shasum -a 256 -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/$name/rucc" --version
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      - name: rpg build
+        run: |
+          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
+            --out "$RUNNER_TEMP/pg" --jobs "$JOBS"
+      # macOS writes a crash report rather than a core, which rpg triage reads from
+      # ~/Library/Logs/DiagnosticReports, so only the debug1 server logs need setting up.
+      - name: keep debug1 server logs
+        run: |
+          echo "log_min_messages = debug1" > "$RUNNER_TEMP/debug1.conf"
+          echo "TEMP_CONFIG=$RUNNER_TEMP/debug1.conf" >> "$GITHUB_ENV"
+      # The open file limit is 256 by default, which upstream's CI raises to 1024 for macOS.
+      - name: rpg test --suite world
+        run: |
+          set -o pipefail
+          ulimit -n 1024
+          ./target/release/rpg test --suite world --row M64 --out "$RUNNER_TEMP/pg" | tee "$RUNNER_TEMP/world.txt"
+      - name: rpg triage
+        if: always()
+        run: ./target/release/rpg triage --out "$RUNNER_TEMP/pg"
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### $PIN world on M64 under autoconf at ${{ matrix.level }} with rucc $RUCC_VERSION"
+            echo
+            jq -r '"build: \(.phase)" + (if .["first-error"] then ", \(.["first-error"])" else "" end)' \
+              "$RUNNER_TEMP/pg/build.json" 2>/dev/null || echo "rpg build did not write build.json"
+            echo
+            grep '^world:' "$RUNNER_TEMP/world.txt" 2>/dev/null || echo "rpg test did not get as far as a count"
+            echo
+            echo "Everything that did not pass:"
+            echo
+            jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
+              "$RUNNER_TEMP/pg/records.jsonl" 2>/dev/null || true
+            echo
+            sed 's/^# Triage$/#### Triage/; s/^## /##### /' "$RUNNER_TEMP/pg/triage.md" 2>/dev/null | head -200 || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the run
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-world-M64-${{ env.PIN }}-autoconf${{ matrix.level }}
+          path: |
+            ${{ runner.temp }}/pg/results/
+            ${{ runner.temp }}/pg/triage.md
+            ${{ runner.temp }}/pg/triage/
+            ${{ runner.temp }}/pg/records.jsonl
+            ${{ runner.temp }}/pg/build.json
+            ${{ runner.temp }}/pg/test-world-run.log
+            ${{ runner.temp }}/pg/build.log
+            ${{ runner.temp }}/pg/configure.log
+          if-no-files-found: ignore
+
   # PG3's fourth criterion: every object is the same when compiled twice, and two builds in
   # different directories give the same postgres binary once the debug information, which holds
   # the paths, is stripped.
   reproducible:
     name: reproducible at ${{ matrix.level }}
+    if: inputs.rows != 'M64'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -215,6 +331,7 @@ jobs:
   # other way round.
   cross-modules:
     name: cross-modules at ${{ matrix.level }}
+    if: inputs.rows != 'M64'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -276,6 +393,7 @@ jobs:
   # transformation rucc makes in it, which shows every step works on a real tree.
   mixed:
     name: mixed at -O2
+    if: inputs.rows != 'M64'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -355,6 +473,7 @@ jobs:
   # hour on L64, and the nightly gives it twenty minutes at each level.
   stress:
     name: stress at ${{ matrix.level }}
+    if: inputs.rows != 'M64'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -416,6 +535,7 @@ jobs:
   # way PG1 checked autoconf. Configure alone with each compiler, then compare what they decided.
   probes:
     name: probes on ${{ matrix.row }} under ${{ matrix.system }}
+    if: inputs.rows != 'M64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -490,6 +610,7 @@ jobs:
   # fails only when a build or the measuring does.
   frames:
     name: frames against gcc-14 -O2
+    if: inputs.rows != 'M64'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:

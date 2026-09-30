@@ -276,7 +276,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
                 args.push("check");
             }
             let label = format!("make {}", args.join(" "));
-            let mut step = Step::new(&label, "make", &build_dir, &log("run"))
+            let mut step = Step::new(&label, crate::process::make(), &build_dir, &log("run"))
                 .args(args)
                 .envs(&env);
             step.unset.clone_from(&unset);

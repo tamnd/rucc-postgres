@@ -52,7 +52,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "stress" => &[
             "out", "row", "records", "run", "timeout", "minutes", "clients", "scale",
         ],
-        "triage" => &["out", "cores"],
+        "triage" => &["out", "cores", "reports", "since"],
         "mixed" => &[
             "gcc", "rucc", "suite", "check", "under", "out", "timeout", "no-fuel",
         ],
@@ -79,7 +79,7 @@ usage:
   rpg asm-audit [--pin NAME] [--out FILE]
   rpg frames --a DIR --b DIR [--a-cc PATH] [--b-cc PATH] [--out FILE] [--jobs N]
   rpg cross-modules --server DIR --modules DIR [--records FILE] [--timeout S]
-  rpg triage [--out DIR] [--cores DIR]
+  rpg triage [--out DIR] [--cores DIR] [--reports DIR] [--since SECONDS]
   rpg mixed --gcc DIR --rucc DIR [--suite S | --check CMD] [--under PREFIX,...] [--out DIR]
             [--timeout S] [--no-fuel]
   rpg nightly --nights DIR [--runs DIR] [--reports DIR] [--issue FILE] [--run-url URL]

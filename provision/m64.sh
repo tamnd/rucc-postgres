@@ -8,9 +8,10 @@
 #
 # What it does:
 #
-#   1. installs meson, ninja, bison, flex, pkgconf and cpanminus with Homebrew. The bison macOS
-#      ships is 2.3, too old for Postgres, and Homebrew's is keg only, so it has to go first on
-#      PATH; the script prints the line that does that.
+#   1. installs meson, ninja, bison, flex, GNU make, pkgconf and cpanminus with Homebrew. The bison
+#      macOS ships is 2.3, too old for Postgres, and Homebrew's is keg only, so it has to go first
+#      on PATH; the script prints the line that does that. GNU make 4 comes as gmake, which rpg
+#      runs on macOS because the suites use make -O and the system's make 3.81 does not have it.
 #   2. installs IPC::Run into ~/perl5 with cpanm, for the TAP tests, and prints the PERL5LIB line.
 #
 # It changes no system setting. Crash reports go to ~/Library/Logs/DiagnosticReports as usual.
@@ -34,7 +35,7 @@ if ! xcode-select -p >/dev/null 2>&1; then
 	exit 1
 fi
 
-brew install meson ninja bison flex pkgconf cpanminus
+brew install meson ninja bison flex make pkgconf cpanminus
 
 prefix=$(brew --prefix)
 cpanm --local-lib "$HOME/perl5" --notest IPC::Run

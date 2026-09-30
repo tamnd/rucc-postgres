@@ -353,10 +353,13 @@ impl Runner<'_> {
                 "-j".to_string(),
                 self.info.jobs.to_string(),
             ]),
-            System::Autoconf => {
-                Step::new("make world-bin", "make", &build_dir, &dir.join("build.log"))
-                    .args([format!("-j{}", self.info.jobs), "world-bin".to_string()])
-            }
+            System::Autoconf => Step::new(
+                "make world-bin",
+                crate::process::make(),
+                &build_dir,
+                &dir.join("build.log"),
+            )
+            .args([format!("-j{}", self.info.jobs), "world-bin".to_string()]),
         }
         .envs(&self.env);
         step.unset.clone_from(&self.unset);
@@ -505,10 +508,13 @@ pub fn mixed(plan: &MixedPlan) -> Result<Mixed, String> {
         let mut step = match system {
             System::Meson => Step::new("ninja", "ninja", &dir, &dir.join("build.log"))
                 .args(["-C".to_string(), build_dir.display().to_string()]),
-            System::Autoconf => {
-                Step::new("make world-bin", "make", &build_dir, &dir.join("build.log"))
-                    .args([format!("-j{}", runner.info.jobs), "world-bin".to_string()])
-            }
+            System::Autoconf => Step::new(
+                "make world-bin",
+                crate::process::make(),
+                &build_dir,
+                &dir.join("build.log"),
+            )
+            .args([format!("-j{}", runner.info.jobs), "world-bin".to_string()]),
         }
         .envs(&runner.env);
         step.unset.clone_from(&runner.unset);

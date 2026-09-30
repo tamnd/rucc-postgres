@@ -249,6 +249,21 @@ pub fn hostname() -> String {
         .unwrap_or_default()
 }
 
+/// GNU make, by the name it has here.
+///
+/// The suites run `make -Otarget`, and output sync arrived in GNU make 4.0. macOS ships 3.81 as
+/// `make`, and Homebrew's newer one is `gmake`, so on macOS `gmake` is taken when it is on the
+/// path. Everywhere else `make` is GNU make 4 already.
+#[must_use]
+pub fn make() -> PathBuf {
+    if cfg!(target_os = "macos")
+        && let Some(gmake) = which("gmake")
+    {
+        return gmake;
+    }
+    PathBuf::from("make")
+}
+
 /// How many cores to use by default.
 #[must_use]
 pub fn cores() -> usize {
