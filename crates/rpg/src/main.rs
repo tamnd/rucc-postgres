@@ -614,7 +614,16 @@ fn config_diff(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
         Err(_) if args.get("divergences").is_none() => Vec::new(),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    let sorted = configdiff::sort(differences, &divergences);
+    // The row the two trees were configured on, which picks the entries scoped to it.
+    let rows = Rows::load(&repo.rows())?;
+    let row = args.get("row").map(|r| rows.get(r)).transpose()?;
+    for v in &divergences {
+        for r in &v.rows {
+            rows.get(r)
+                .map_err(|e| format!("{}: {} {}: {e}", path.display(), v.source, v.name))?;
+        }
+    }
+    let sorted = configdiff::sort(differences, &divergences, row.map(|r| r.name.as_str()));
     for (d, v) in &sorted.explained {
         println!("explained, {}: {}\n  because {}", d.source, d.name, v.why);
     }

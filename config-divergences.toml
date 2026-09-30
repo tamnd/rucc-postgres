@@ -4,7 +4,9 @@
 # An entry is `source`, which is `pg_config.h`, `Makefile.global` or `probe`, the `name` of the
 # define, variable or question, and `why`. A name ending in `*` matches every name that starts
 # with the part before it. A difference with no entry fails the comparison, and an entry that
-# matched nothing is printed so it can be taken out.
+# matched nothing is printed so it can be taken out. An entry may add `rows`, the rows of rows.toml
+# it is for, when the difference belongs to one platform; `rpg config-diff --row` picks them, and
+# an entry without `rows` is for every row.
 
 [[divergence]]
 source = "pg_config.h"

@@ -45,7 +45,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
             "row", "runs", "pin", "config", "system", "level", "cc", "out", "jobs", "suite",
         ],
         "demands" | "asm-audit" => &["pin", "out"],
-        "config-diff" => &["a", "b", "divergences"],
+        "config-diff" => &["a", "b", "divergences", "row"],
         "repro" => &["build", "file", "out", "object"],
         "frames" => &["a", "b", "a-cc", "b-cc", "out", "jobs"],
         "cross-modules" => &["server", "modules", "records", "timeout"],
@@ -74,7 +74,7 @@ usage:
            [--records FILE] [--run N] [--timeout S]
   rpg baseline --row ROW [--runs 3] [--system S] [--level L] [--cc PATH] [--config C] [--pin P]
   rpg demands [--pin NAME] [--out FILE]
-  rpg config-diff --a DIR --b DIR [--divergences FILE]
+  rpg config-diff --a DIR --b DIR [--divergences FILE] [--row ROW]
   rpg repro --build DIR --file PATH [--out DIR] [--object PART]
   rpg asm-audit [--pin NAME] [--out FILE]
   rpg frames --a DIR --b DIR [--a-cc PATH] [--b-cc PATH] [--out FILE] [--jobs N]
