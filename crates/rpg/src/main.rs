@@ -508,13 +508,12 @@ fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
                 .flatten()
         })
         .map(|dir| -> Result<triage::Reports, String> {
-            let since = match args.get("since") {
-                Some(_) => {
-                    std::time::UNIX_EPOCH + std::time::Duration::from_secs(args.number("since", 0)?)
-                }
-                None => std::fs::metadata(out.join("build.json"))
+            let since = if args.get("since").is_some() {
+                std::time::UNIX_EPOCH + std::time::Duration::from_secs(args.number("since", 0)?)
+            } else {
+                std::fs::metadata(out.join("build.json"))
                     .and_then(|m| m.modified())
-                    .unwrap_or(std::time::UNIX_EPOCH),
+                    .unwrap_or(std::time::UNIX_EPOCH)
             };
             Ok(triage::Reports { dir, since })
         })

@@ -286,15 +286,18 @@ pub fn parse_ips(text: &str) -> Result<CrashReport, String> {
     let body: serde_json::Value = serde_json::from_str(body)
         .or_else(|_| serde_json::from_str(text))
         .map_err(|e| format!("not a JSON crash report: {e}"))?;
-    if let Some(kind) = header.get("bug_type").and_then(|v| v.as_str())
+    if let Some(kind) = header.get("bug_type").and_then(serde_json::Value::as_str)
         && kind != "309"
     {
         return Err(format!(
             "a report of kind {kind}, which is not a crash (309)"
         ));
     }
-    let string =
-        |v: &serde_json::Value, key: &str| v.get(key).and_then(|s| s.as_str()).map(str::to_string);
+    let string = |v: &serde_json::Value, key: &str| {
+        v.get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
     let program = string(&body, "procName")
         .or_else(|| string(&header, "app_name"))
         .or_else(|| string(&header, "name"))
@@ -305,7 +308,7 @@ pub fn parse_ips(text: &str) -> Result<CrashReport, String> {
         .unwrap_or_else(|| "an unknown signal".to_string());
     let threads = body
         .get("threads")
-        .and_then(|t| t.as_array())
+        .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default();
     let faulting = body
@@ -322,12 +325,12 @@ pub fn parse_ips(text: &str) -> Result<CrashReport, String> {
         });
     let images = body
         .get("usedImages")
-        .and_then(|i| i.as_array())
+        .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default();
     let frames = faulting
         .and_then(|t| t.get("frames"))
-        .and_then(|f| f.as_array())
+        .and_then(serde_json::Value::as_array)
         .map(|frames| {
             frames
                 .iter()
@@ -541,7 +544,8 @@ pub fn triage(out: &Path, cores: &Path, reports: Option<&Reports>) -> Triage {
 /// Add the Postgres crash reports written since the run started.
 fn crash_reports(triage: &mut Triage, out: &Path, reports: &Reports) {
     let traces = out.join("triage");
-    for path in files(&reports.dir) {
+    for found in files(&reports.dir) {
+        let path = found.as_path();
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -549,13 +553,13 @@ fn crash_reports(triage: &mut Triage, out: &Path, reports: &Reports) {
         if path.extension().is_none_or(|e| e != "ips") {
             continue;
         }
-        let recent = std::fs::metadata(&path)
+        let recent = std::fs::metadata(path)
             .and_then(|m| m.modified())
             .is_ok_and(|t| t >= reports.since);
         if !recent {
             continue;
         }
-        let text = match std::fs::read_to_string(&path) {
+        let text = match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(e) => {
                 triage.unread.push((name, e.to_string()));
