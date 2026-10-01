@@ -1,0 +1,14 @@
+date = "2026-10-01"
+row = "M64"
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+config = "minimal"
+system = "autoconf"
+level = "-O2"
+compiler = "rucc 0.18.0"
+host = "sjc22-bt146-e252aad6-4a8a-4d4e-b07f-6120e912b342-DE4B314306B9"
+built = false
+first-error = "src/backend/postgres: Undefined symbols for architecture arm64:"
+failing = []
+
+[counts]
