@@ -3,7 +3,7 @@
 # the PG_TEST_EXTRA the exit criterion names. They take too long for every pull request, so they
 # run each night on the default pin, each Monday on the head of REL_19_STABLE, by hand, and on the
 # pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
-# row alone.
+# row alone. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds.
 name: world
 
 on:
@@ -68,6 +68,14 @@ jobs:
             system: autoconf
           - row: LA64
             level: -O2
+            system: autoconf
+          # PG8's two extra levels, on L64 under autoconf. They are not graded yet; this is how
+          # what they break shows up before they are.
+          - row: L64
+            level: -O1
+            system: autoconf
+          - row: L64
+            level: -Os
             system: autoconf
     timeout-minutes: 240
     env:

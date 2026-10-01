@@ -47,31 +47,39 @@ impl fmt::Display for System {
     }
 }
 
-/// The optimization level. Only the two graded levels exist until PG8 adds more.
+/// The optimization level. `-O0` and `-O2` are the graded levels; PG8 adds `-O1` and `-Os`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
     /// `-O0`.
     O0,
+    /// `-O1`.
+    O1,
     /// `-O2`.
     O2,
+    /// `-Os`.
+    Os,
 }
 
 impl Level {
-    /// Accepts `-O2`, `O2` and `2`.
+    /// Accepts `-O2`, `O2` and `2`, and the same for the others.
     pub fn parse(text: &str) -> Result<Self, String> {
         match text.trim_start_matches('-').trim_start_matches('O') {
             "0" => Ok(Self::O0),
+            "1" => Ok(Self::O1),
             "2" => Ok(Self::O2),
-            _ => Err(format!("unknown level {text}; use -O0 or -O2")),
+            "s" => Ok(Self::Os),
+            _ => Err(format!("unknown level {text}; use -O0, -O1, -O2 or -Os")),
         }
     }
 
-    /// The flag, `-O0` or `-O2`.
+    /// The flag, `-O0`, `-O1`, `-O2` or `-Os`.
     #[must_use]
     pub const fn flag(self) -> &'static str {
         match self {
             Self::O0 => "-O0",
+            Self::O1 => "-O1",
             Self::O2 => "-O2",
+            Self::Os => "-Os",
         }
     }
 
@@ -80,7 +88,9 @@ impl Level {
     pub const fn digit(self) -> &'static str {
         match self {
             Self::O0 => "0",
+            Self::O1 => "1",
             Self::O2 => "2",
+            Self::Os => "s",
         }
     }
 }
@@ -188,6 +198,9 @@ mod tests {
         assert_eq!(Level::parse("-O2").unwrap(), Level::O2);
         assert_eq!(Level::parse("O0").unwrap(), Level::O0);
         assert_eq!(Level::parse("2").unwrap(), Level::O2);
+        assert_eq!(Level::parse("-O1").unwrap(), Level::O1);
+        assert_eq!(Level::parse("-Os").unwrap(), Level::Os);
+        assert_eq!(Level::Os.digit(), "s");
         assert!(Level::parse("-O3").is_err());
     }
 
