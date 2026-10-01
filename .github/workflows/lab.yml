@@ -1,0 +1,33 @@
+# Temporary: build rucc from the branch named in lab/ref and look at what it makes of lab/*.c.
+# Lives on the rucc-lab branch only.
+name: lab
+on:
+  push:
+    branches: [rucc-lab]
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: build rucc
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 --branch "$(cat lab/ref)" https://github.com/tamnd/rucc.git "$RUNNER_TEMP/rucc"
+          cd "$RUNNER_TEMP/rucc"
+          cargo build --release -p rucc 2>&1 | tail -3
+          echo "RUCC=$RUNNER_TEMP/rucc/target/release/rucc" >> "$GITHUB_ENV"
+      - name: compile
+        run: |
+          sudo apt-get install -y gcc-14 >/dev/null 2>&1 || true
+          mkdir -p out
+          for f in lab/*.c; do
+            b=$(basename "$f" .c)
+            echo "=== $b rucc -O2"
+            RUCC_LAB=1 "$RUCC" -O2 -S -fstack-usage "$f" -o "out/$b.s" 2> "out/$b.err" || true
+            cat "out/$b.err" | head -400
+            cat out/$b.su 2>/dev/null || cat "$b.su" 2>/dev/null || true
+            grep -v '^\s*\.\(cfi\|file\|loc\|section\|p2align\|type\|size\|globl\|text\|ident\)' "out/$b.s" | head -300
+            echo "=== $b gcc-14 -O2"
+            gcc-14 -O2 -S -fstack-usage "$f" -o "out/$b.gcc.s" && cat out/$b.gcc.su 2>/dev/null || true
+          done
