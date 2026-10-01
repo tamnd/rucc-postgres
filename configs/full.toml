@@ -1,0 +1,46 @@
+# The full configuration of the design, document 05.6, which PG8 brings in.
+#
+# Every library the milestone names turned on: OpenSSL, ICU, libxml2, libxslt, lz4, zstd, zlib and
+# readline. LLVM and NLS stay off, as in the minimal configuration, TAP tests on, assertions off,
+# debug information on. The same options go to the reference build and the rucc build.
+#
+# Meson's `auto_features=disabled` is kept so that a library that is not named here stays off
+# whatever else the machine has installed. The optimization level comes from `rpg build --level`.
+
+name = "full"
+
+[autoconf]
+options = [
+    "--with-openssl",
+    "--with-icu",
+    "--with-readline",
+    "--with-zlib",
+    "--with-lz4",
+    "--with-zstd",
+    "--with-libxml",
+    "--with-libxslt",
+    "--without-llvm",
+    "--disable-nls",
+    "--enable-tap-tests",
+    "--disable-cassert",
+    "--enable-debug",
+]
+
+[meson]
+options = [
+    "-Dauto_features=disabled",
+    "-Dssl=openssl",
+    "-Dicu=enabled",
+    "-Dreadline=enabled",
+    "-Dzlib=enabled",
+    "-Dlz4=enabled",
+    "-Dzstd=enabled",
+    "-Dlibxml=enabled",
+    "-Dlibxslt=enabled",
+    "-Dllvm=disabled",
+    "-Dnls=disabled",
+    "-Duuid=none",
+    "-Dtap_tests=enabled",
+    "-Dcassert=false",
+    "-Ddebug=true",
+]
