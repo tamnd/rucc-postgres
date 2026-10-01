@@ -68,7 +68,7 @@ rpg: build and test the pinned Postgres tree with rucc and with a reference comp
 
 usage:
   rpg fetch [--pin NAME] [--no-upstream-check]
-  rpg build --cc PATH [--level -O0|-O2] [--system meson|autoconf] [--config minimal]
+  rpg build --cc PATH [--level -O0|-O1|-O2|-Os] [--system meson|autoconf] [--config minimal]
             [--out DIR] [--pin NAME] [--jobs N] [--twice] [--configure-only]
   rpg test [--suite regress|isolation|ecpg|contrib|modules|world] [--out DIR] [--row ROW]
            [--records FILE] [--run N] [--timeout S]
