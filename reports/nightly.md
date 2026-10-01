@@ -18,8 +18,8 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | LA64-REL_18_6-minimal-autoconf-O2 | 2026-10-01 | rucc 0.18.0 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_19_STABLE-minimal-autoconf-O0 | 2026-09-30 | rucc 0.16.1 | 984 passed, 0 not, 0 skipped | first night |
 | LA64-REL_19_STABLE-minimal-autoconf-O2 | 2026-09-30 | rucc 0.16.1 | 984 passed, 0 not, 0 skipped | first night |
-| M64-REL_18_6-minimal-autoconf-O0 | 2026-10-01 | rucc 0.18.0 | did not build | first night |
-| M64-REL_18_6-minimal-autoconf-O2 | 2026-10-01 | rucc 0.18.0 | did not build | first night |
+| M64-REL_18_6-minimal-autoconf-O0 | 2026-10-01 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped | first night |
+| M64-REL_18_6-minimal-autoconf-O2 | 2026-10-01 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-autoconf-O0 | 2026-09-29 | rucc 0.15.2 | 984 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-autoconf-O2 | 2026-09-29 | rucc 0.15.2 | 984 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-meson-O0 | 2026-09-29 | rucc 0.15.2 | 982 passed, 0 not, 0 skipped | first night |
@@ -109,13 +109,13 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
-| 2026-10-01 | rucc 0.18.0 | did not build |
+| 2026-10-01 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped |
 
 ### M64-REL_18_6-minimal-autoconf-O2
 
 | Date | Compiler | Tests |
 |---|---|---|
-| 2026-10-01 | rucc 0.18.0 | did not build |
+| 2026-10-01 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped |
 
 ### REL_19_STABLE-minimal-autoconf-O0
 

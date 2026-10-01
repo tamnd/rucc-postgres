@@ -5,10 +5,10 @@ commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
 config = "minimal"
 system = "autoconf"
 level = "-O2"
-compiler = "rucc 0.18.0"
-host = "sjc22-bt146-e252aad6-4a8a-4d4e-b07f-6120e912b342-DE4B314306B9"
-built = false
-first-error = "src/backend/postgres: Undefined symbols for architecture arm64:"
+compiler = "rucc 0.18.8"
+host = "sat12-bq155-d78dcd2e-b67b-4ddc-beae-919c98051312-1E9E0EED83F7"
+built = true
 failing = []
 
 [counts]
+passed = 913
