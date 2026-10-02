@@ -6,7 +6,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
@@ -14,7 +14,7 @@ repository = "https://github.com/tamnd/rucc-postgres"
 
 [workspace.dependencies]
 # The path requirement tracks the workspace version above and has to be bumped with it.
-rpg-shim = { path = "crates/rpg-shim", version = "0.2.0" }
+rpg-shim = { path = "crates/rpg-shim", version = "0.2.1" }
 libc = "0.2"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
