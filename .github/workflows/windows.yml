@@ -1,0 +1,128 @@
+# PG6's first check, before rucc is involved: Postgres built by gcc in MSYS2's UCRT64 environment
+# and linked once by ld.bfd and once by lld, each run through the regression suite. lld is the
+# linker rucc's MinGW driver uses, so this finds out whether lld links Postgres correctly at all,
+# with gcc's objects, before any failure on the W64 row can be blamed on rucc. lld 18 mislinked
+# here before (tamnd/rucc#1515), so the job also fails when MSYS2 ships anything older than 19.
+#
+# It runs each Sunday, by hand, and on pull requests that change this file.
+name: windows
+
+on:
+  schedule:
+    - cron: "23 5 * * 0"
+  workflow_dispatch:
+    inputs:
+      pin:
+        description: pin from pins.toml, a release
+        default: REL_18_6
+  pull_request:
+    paths:
+      - .github/workflows/windows.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gcc-linked:
+    name: gcc's Postgres on W64 linked by ${{ matrix.linker }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        linker: [bfd, lld]
+    timeout-minutes: 120
+    env:
+      PIN: ${{ inputs.pin || 'REL_18_6' }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-perl
+            bison
+            flex
+            diffutils
+            tar
+            bzip2
+      - name: the tools and the lld version
+        run: |
+          set -euo pipefail
+          gcc --version | head -1
+          ld --version | head -1
+          ld.lld --version
+          major=$(ld.lld --version | sed -n 's/.*LLD \([0-9]*\)\..*/\1/p')
+          if [ -z "$major" ] || [ "$major" -lt 19 ]; then
+            echo "::error::MSYS2's lld is '$major', older than 19, which mislinks Postgres (tamnd/rucc#1515)"
+            exit 1
+          fi
+          echo "lld $major is 19 or later" >> "$GITHUB_STEP_SUMMARY"
+      - name: fetch the pin
+        run: |
+          set -euo pipefail
+          url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
+          sha=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^sha256 = \"\(.*\)\"/\1/p" pins.toml)
+          if [ -z "$url" ] || [ -z "$sha" ]; then
+            echo "::error::$PIN is not a release in pins.toml"
+            exit 1
+          fi
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o pg.tar.bz2 "$url"
+          echo "$sha  pg.tar.bz2" | sha256sum -c
+          mkdir src
+          tar xjf pg.tar.bz2 -C src --strip-components=1
+      # The minimal configuration from configs/minimal.toml, without the TAP tests, which this
+      # check does not need. CC_LD is how meson is told which linker gcc should call.
+      - name: meson setup
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          CC=gcc CC_LD=${{ matrix.linker }} meson setup build src \
+            -Dauto_features=disabled -Dicu=disabled -Dreadline=disabled -Dzlib=disabled \
+            -Dssl=none -Dnls=disabled -Dlz4=disabled -Dzstd=disabled -Dlibxml=disabled \
+            -Dllvm=disabled -Duuid=none -Dtap_tests=disabled -Dcassert=false -Ddebug=true \
+            -Doptimization=2 | tee setup.txt
+          if ! grep -q "C linker for the host machine: gcc ld.${{ matrix.linker }}" setup.txt; then
+            echo "::error::meson did not pick ld.${{ matrix.linker }}"
+            exit 1
+          fi
+      - name: build
+        run: ninja -C "$RUNNER_TEMP/build"
+      - name: regression suite
+        run: |
+          set -o pipefail
+          meson test -C "$RUNNER_TEMP/build" --suite setup --suite regress --print-errorlogs \
+            | tee "$RUNNER_TEMP/regress.txt"
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### $PIN built by gcc and linked by ld.${{ matrix.linker }} on W64"
+            echo
+            grep -E '^(Ok|Fail|Skipped|Timeout|Expected Fail|Unexpected Pass):' "$RUNNER_TEMP/regress.txt" \
+              || echo "the regression suite did not get as far as a count"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the run
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: w64-gcc-${{ matrix.linker }}-${{ env.PIN }}
+          path: |
+            ${{ runner.temp }}/setup.txt
+            ${{ runner.temp }}/regress.txt
+            ${{ runner.temp }}/build/meson-logs/
+            ${{ runner.temp }}/build/testrun/regress/
+          if-no-files-found: ignore
