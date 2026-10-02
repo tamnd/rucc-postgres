@@ -332,30 +332,52 @@ jobs:
       # pg_config's answers, the configure arguments and CC among them, are compiled into
       # postgres and pg_config, and CC is the shim inside each build's directory. The two
       # directories have names of the same length, so the one name can stand in for the other
-      # before the bytes are compared. Those strings go where the linker merges strings, and ld
-      # orders merged strings by comparing them from the end, so the two names differ only in
-      # their first letter. Then no other string sorts between them, and the strings that hold
-      # the path come out in the same order in both builds.
-      - name: compare the binaries
+      # before the bytes are compared. Every object has to be the same after that. A linked
+      # binary can still differ, because those strings go where the linker merges strings and ld
+      # places merged strings by their contents, so a string holding the path moves when the path
+      # does. Such a binary passes when its sections have the same sizes and it holds the same
+      # strings, and it is named in the summary.
+      - name: compare the objects and the binaries
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
+          swap() { python3 -c 'import sys; p=sys.argv[1]; d=open(p,"rb").read(); open(p,"wb").write(d.replace(b"/a-pg/", b"/b-pg/"))' "$1"; }
+          objects=0
+          for a in $(cd a-pg/build && find src contrib -name '*.o' | sort); do
+            b="b-pg/build/$a"
+            [ -f "$b" ] || continue
+            strip --strip-debug -o one "a-pg/build/$a"
+            strip --strip-debug -o two "$b"
+            swap one
+            if ! cmp -s one two; then
+              echo "object differs: $a"
+              objects=$((objects + 1))
+            fi
+          done
           different=0
+          placed=""
           for a in $(cd a-pg/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
             b="b-pg/build/$a"
             [ -f "$b" ] || continue
             # Scripts are named pg* too, and strip refuses anything that is not an object.
             strip --strip-debug -o one "a-pg/build/$a" 2>/dev/null || continue
             strip --strip-debug -o two "$b"
-            python3 -c 'import sys; p=sys.argv[1]; d=open(p,"rb").read(); open(p,"wb").write(d.replace(b"/a-pg/", b"/b-pg/"))' one
-            if ! cmp -s one two; then
-              echo "differs: $a"
-              diff <(strings -n 6 one) <(strings -n 6 two) | head -20 || true
-              different=$((different + 1))
+            swap one
+            cmp -s one two && continue
+            if [ "$(size -A one | tail -n +3)" = "$(size -A two | tail -n +3)" ] \
+              && cmp -s <(strings -n 6 one | sort) <(strings -n 6 two | sort); then
+              placed="$placed $a"
+              continue
             fi
+            echo "differs: $a"
+            diff <(strings -n 6 one) <(strings -n 6 two) | head -20 || true
+            different=$((different + 1))
           done
-          echo "$different binaries differ" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ "$different" = 0 ]
+          {
+            echo "$objects objects differ, $different binaries differ"
+            [ -z "$placed" ] || echo "the same apart from where the linker put merged strings:$placed"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$objects" = 0 ] && [ "$different" = 0 ]
 
   # PG3's third criterion: the modules built by rucc loaded into a server built by gcc, and the
   # other way round.
