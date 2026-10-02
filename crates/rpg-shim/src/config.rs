@@ -27,6 +27,10 @@ pub struct ShimConfig {
     /// Whether to compile everything twice and compare. Overridden by `RPG_TWICE`.
     #[serde(default)]
     pub twice: bool,
+    /// Arguments put before the build's own on every command line, such as a cross compiler's
+    /// target and sysroot.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
 }
 
 impl ShimConfig {
@@ -130,6 +134,10 @@ mod tests {
             log: "/b/compile.jsonl".into(),
             rucc_trace: true,
             twice: false,
+            args: vec![
+                "--target=x86_64-windows-gnu".into(),
+                "--sysroot=D:/msys64/ucrt64".into(),
+            ],
         };
         std::fs::write(dir.join(FILE_NAME), written.to_toml()).unwrap();
         let read = ShimConfig::load(Some(&dir), &env_of(&[])).unwrap();

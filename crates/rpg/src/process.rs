@@ -204,7 +204,7 @@ pub fn capture(program: &Path, args: &[&str]) -> Result<String, String> {
 /// Find a program on `PATH`, or take it as given when it already names a file.
 #[must_use]
 pub fn which(name: &str) -> Option<PathBuf> {
-    if name.contains('/') {
+    if name.contains('/') || name.contains('\\') {
         let path = PathBuf::from(name);
         return path
             .is_file()
