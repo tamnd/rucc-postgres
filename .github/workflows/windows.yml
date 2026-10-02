@@ -223,8 +223,9 @@ jobs:
           cc="$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe") --target=x86_64-windows-gnu"
           cc="$cc --sysroot=$(cygpath -m /ucrt64) -idirafter $(cygpath -m "$RUNNER_TEMP/shim")"
           echo "RUCC_CC=$cc" >> "$GITHUB_ENV"
-      # rpg's own download stopped in curl for over two hours on the first try, so the archive is
-      # put in rpg's cache by MSYS2's curl and rpg fetch checks it and unpacks it.
+      # rpg runs tar by name, and on Windows that finds the bsdtar in System32 before MSYS2's, which
+      # sat on this archive until the step timed out. MSYS2's curl and tar fill rpg's cache instead,
+      # and rpg fetch checks the hash and finds the tree already unpacked.
       - name: rpg fetch
         timeout-minutes: 20
         run: |
@@ -235,6 +236,8 @@ jobs:
           url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
           mkdir -p "$RUNNER_TEMP/rpg-cache/archives"
           curl -fsSL --max-time 600 -o "$RUNNER_TEMP/rpg-cache/archives/${url##*/}" "$url"
+          mkdir -p "$RUNNER_TEMP/rpg-cache/src/$PIN"
+          tar -xf "$RUNNER_TEMP/rpg-cache/archives/${url##*/}" -C "$RUNNER_TEMP/rpg-cache/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
       - name: rpg build
         timeout-minutes: 90
