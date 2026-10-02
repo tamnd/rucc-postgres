@@ -121,7 +121,10 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP"
           if [ "${{ matrix.cc }}" = rucc ]; then
-            export CC="$RUCC --target=x86_64-windows-gnu --sysroot=$(cygpath -m /ucrt64)"
+            # Until a release has tamnd/rucc#2632, its tgmath.h comes from the branch.
+            mkdir -p shim
+            curl -fsSL -o shim/tgmath.h https://raw.githubusercontent.com/tamnd/rucc/darwin-tgmath/crates/rucc-session/runtime/include/tgmath.h
+            export CC="$RUCC --target=x86_64-windows-gnu --sysroot=$(cygpath -m /ucrt64) -idirafter $(cygpath -m "$PWD/shim")"
           else
             export CC=gcc CC_LD=${{ matrix.linker }}
           fi
