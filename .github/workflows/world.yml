@@ -3,7 +3,8 @@
 # the PG_TEST_EXTRA the exit criterion names. They take too long for every pull request, so they
 # run each night on the default pin, each Monday on the head of REL_19_STABLE, by hand, and on the
 # pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
-# row alone. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds.
+# row alone. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, and at -O2 with
+# the full configuration under both build systems.
 name: world
 
 on:
@@ -53,7 +54,7 @@ jobs:
   # LA64 runs on GitHub's arm runners under autoconf only, which is PG4's row brought forward so
   # that what AArch64 is missing shows up before that milestone starts.
   world:
-    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}
+    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
     if: inputs.rows != 'M64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
@@ -62,6 +63,7 @@ jobs:
         row: [L64]
         level: [-O0, -O2]
         system: [autoconf, meson]
+        config: [minimal]
         include:
           - row: LA64
             level: -O0
@@ -77,6 +79,17 @@ jobs:
           - row: L64
             level: -Os
             system: autoconf
+          # PG8's full configuration, every library the milestone names, on L64 at -O2 under both
+          # build systems. Each library comes from the distribution, built by gcc, so this is also
+          # the ABI between the two compilers at work.
+          - row: L64
+            level: -O2
+            system: autoconf
+            config: full
+          - row: L64
+            level: -O2
+            system: meson
+            config: full
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
@@ -89,6 +102,11 @@ jobs:
         run: |
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
           sudo apt-get install -y libipc-run-perl meson ninja-build bison flex gdb
+      - name: install the libraries the full configuration links
+        if: matrix.config == 'full'
+        run: |
+          sudo apt-get install -y libssl-dev libicu-dev libreadline-dev zlib1g-dev liblz4-dev libzstd-dev \
+            libxml2-dev libxslt1-dev pkg-config
       - name: install rucc
         run: |
           set -euo pipefail
@@ -106,7 +124,7 @@ jobs:
           ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
       - name: rpg build
         run: |
-          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config minimal \
+          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config ${{ matrix.config || 'minimal' }} \
             --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
       # What rpg triage reads afterwards: a core from any process that crashes, named with the
       # path of its executable so gdb can be given both, and server logs at debug1, which
@@ -129,7 +147,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }} with rucc $RUCC_VERSION"
+            echo "### $PIN world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }} with the ${{ matrix.config || 'minimal' }} configuration and rucc $RUCC_VERSION"
             echo
             grep '^world:' "$RUNNER_TEMP/world.txt" || echo "rpg test did not get as far as a count"
             echo
@@ -144,7 +162,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}
+          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md

@@ -221,6 +221,18 @@ mod tests {
                 .iter()
                 .any(|o| o == "--without-icu")
         );
+        let full = BuildConfig::load(&root.join("configs/full.toml")).unwrap();
+        assert_eq!(full.name, "full");
+        assert!(
+            full.options(System::Meson)
+                .iter()
+                .any(|o| o == "-Dssl=openssl")
+        );
+        assert!(
+            full.options(System::Autoconf)
+                .iter()
+                .any(|o| o == "--with-libxslt")
+        );
         let rows = Rows::load(&root.join("rows.toml")).unwrap();
         assert_eq!(rows.get("L64").unwrap().reference, "gcc-16");
         assert_eq!(rows.rows.len(), 4);
