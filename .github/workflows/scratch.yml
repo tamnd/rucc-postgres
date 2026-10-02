@@ -34,13 +34,24 @@ jobs:
           git checkout -q "$REF"
           cargo build --release --bin rucc
           echo "RUCC=$PWD/target/release/rucc" >> "$GITHUB_ENV"
+      - name: reduction
+        run: |
+          set +e
+          for o in -O0 -O2; do
+            echo "== rucc $o"; "$RUCC" $o scratch/v8.c -o v8 && ./v8
+            echo "== gcc $o"; gcc $o scratch/v8.c -o v8g && ./v8g
+          done
+          "$RUCC" -O0 -S scratch/v8.c -o - | sed -n '/^search:/,/cfi_endproc/p;/^vector8_eq:/,/cfi_endproc/p;/^vector8_broadcast:/,/cfi_endproc/p'
+          true
       - name: build with gcc and with rucc
+        if: false
         run: |
           cargo build --release --workspace
           ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
           ./target/release/rpg build --pin "$PIN" --cc gcc --level -O0 --system autoconf --config minimal --out "$RUNNER_TEMP/gcc" --jobs "$(nproc)"
           ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level -O0 --system autoconf --config minimal --out "$RUNNER_TEMP/rucc" --jobs "$(nproc)"
       - name: initdb by hand
+        if: false
         run: |
           set +e
           cd "$RUNNER_TEMP/rucc/build"
@@ -52,6 +63,7 @@ jobs:
           LD_LIBRARY_PATH="$lib" gdb -batch -ex run -ex bt -ex 'info registers' --args "$(dirname "$bin")/postgres" --single -D "$RUNNER_TEMP/data" postgres </dev/null 2>&1 | tail -40
           true
       - name: rpg mixed
+        if: false
         run: |
           ./target/release/rpg mixed --gcc "$RUNNER_TEMP/gcc" --rucc "$RUNNER_TEMP/rucc" --suite regress \
             --out "$RUNNER_TEMP/mixed" 2>&1 | tail -60
