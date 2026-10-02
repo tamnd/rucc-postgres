@@ -41,7 +41,9 @@ jobs:
             echo "== rucc $o"; "$RUCC" $o scratch/v8.c -o v8 && ./v8
             echo "== gcc $o"; gcc $o scratch/v8.c -o v8g && ./v8g
           done
-          "$RUCC" -O0 -S scratch/v8.c -o - | sed -n '/^search:/,/cfi_endproc/p;/^vector8_eq:/,/cfi_endproc/p;/^vector8_broadcast:/,/cfi_endproc/p'
+          "$RUCC" -O0 -g scratch/v8.c -o v8
+          gdb -batch -ex run -ex 'x/6i $pc-12' -ex 'x/i $pc' -ex bt -ex 'p/x $rsp' -ex 'p/x $rbp' ./v8 2>&1 | tail -30
+          "$RUCC" -O0 -S scratch/v8.c -o - | sed -n '/^any:/,/cfi_endproc/p;/^main:/,/cfi_endproc/p;/^vector8_load:/,/cfi_endproc/p;/^vector8_or:/,/cfi_endproc/p' | grep -v cfi
           true
       - name: build with gcc and with rucc
         if: false
