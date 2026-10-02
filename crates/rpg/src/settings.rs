@@ -47,7 +47,8 @@ impl fmt::Display for System {
     }
 }
 
-/// The optimization level. `-O0` and `-O2` are the graded levels; PG8 adds `-O1` and `-Os`.
+/// The optimization level. `-O0` and `-O2` are the graded levels; PG8 adds `-O1`, `-Os` and `-O2`
+/// with `-flto`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
     /// `-O0`.
@@ -58,21 +59,27 @@ pub enum Level {
     O2,
     /// `-Os`.
     Os,
+    /// `-O2 -flto`, compiled and linked with it.
+    O2Lto,
 }
 
 impl Level {
-    /// Accepts `-O2`, `O2` and `2`, and the same for the others.
+    /// Accepts `-O2`, `O2` and `2`, and the same for the others. `-O2-flto`, `O2-flto` and
+    /// `-O2 -flto` are the level with link time optimization.
     pub fn parse(text: &str) -> Result<Self, String> {
         match text.trim_start_matches('-').trim_start_matches('O') {
             "0" => Ok(Self::O0),
             "1" => Ok(Self::O1),
             "2" => Ok(Self::O2),
             "s" => Ok(Self::Os),
-            _ => Err(format!("unknown level {text}; use -O0, -O1, -O2 or -Os")),
+            "2-flto" | "2 -flto" => Ok(Self::O2Lto),
+            _ => Err(format!(
+                "unknown level {text}; use -O0, -O1, -O2, -Os or -O2-flto"
+            )),
         }
     }
 
-    /// The flag, `-O0`, `-O1`, `-O2` or `-Os`.
+    /// The flags, `-O0`, `-O1`, `-O2`, `-Os` or `-O2 -flto`.
     #[must_use]
     pub const fn flag(self) -> &'static str {
         match self {
@@ -80,7 +87,23 @@ impl Level {
             Self::O1 => "-O1",
             Self::O2 => "-O2",
             Self::Os => "-Os",
+            Self::O2Lto => "-O2 -flto",
         }
+    }
+
+    /// The level as one word, for file names and records: the flag, or `-O2-flto`.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::O2Lto => "-O2-flto",
+            _ => self.flag(),
+        }
+    }
+
+    /// Whether the build links with `-flto`.
+    #[must_use]
+    pub const fn lto(self) -> bool {
+        matches!(self, Self::O2Lto)
     }
 
     /// The digit meson's `optimization` option takes.
@@ -89,7 +112,7 @@ impl Level {
         match self {
             Self::O0 => "0",
             Self::O1 => "1",
-            Self::O2 => "2",
+            Self::O2 | Self::O2Lto => "2",
             Self::Os => "s",
         }
     }
@@ -97,7 +120,7 @@ impl Level {
 
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.flag())
+        f.write_str(self.name())
     }
 }
 
@@ -201,6 +224,13 @@ mod tests {
         assert_eq!(Level::parse("-O1").unwrap(), Level::O1);
         assert_eq!(Level::parse("-Os").unwrap(), Level::Os);
         assert_eq!(Level::Os.digit(), "s");
+        for text in ["-O2-flto", "O2-flto", "-O2 -flto"] {
+            assert_eq!(Level::parse(text).unwrap(), Level::O2Lto, "{text}");
+        }
+        assert_eq!(Level::O2Lto.flag(), "-O2 -flto");
+        assert_eq!(Level::O2Lto.name(), "-O2-flto");
+        assert_eq!(Level::O2Lto.digit(), "2");
+        assert!(Level::O2Lto.lto() && !Level::O2.lto());
         assert!(Level::parse("-O3").is_err());
     }
 
