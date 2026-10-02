@@ -3,8 +3,8 @@
 # the PG_TEST_EXTRA the exit criterion names. They take too long for every pull request, so they
 # run each night on the default pin, each Monday on the head of REL_19_STABLE, by hand, and on the
 # pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
-# row alone. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, and at -O2 with
-# the full configuration under both build systems.
+# row alone. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, at -O2 with -flto
+# under both build systems, and at -O2 with the full configuration under both build systems.
 name: world
 
 on:
@@ -29,6 +29,7 @@ on:
     paths:
       - .github/workflows/world.yml
       - crates/rpg/src/suite.rs
+      - crates/rpg/src/settings.rs
       - crates/rpg/src/regress.rs
       - crates/rpg/src/pins.rs
       - crates/rpg/src/cross.rs
@@ -79,6 +80,14 @@ jobs:
           - row: L64
             level: -Os
             system: autoconf
+          # And -O2 with -flto on every compile and link, under both build systems, since meson
+          # asks for it with b_lto and autoconf with CFLAGS and LDFLAGS.
+          - row: L64
+            level: -O2-flto
+            system: autoconf
+          - row: L64
+            level: -O2-flto
+            system: meson
           # PG8's full configuration, every library the milestone names, on L64 at -O2 under both
           # build systems. Each library comes from the distribution, built by gcc, so this is also
           # the ABI between the two compilers at work.

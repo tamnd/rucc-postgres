@@ -60,7 +60,7 @@ pub fn default_out(
         .map_or_else(|| cc.to_string(), |n| n.to_string_lossy().into_owned());
     work.join(format!(
         "{pin}-{config}-{system}-{}-{cc}",
-        level.flag().trim_start_matches('-')
+        level.name().trim_start_matches('-')
     ))
 }
 
@@ -426,7 +426,8 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
             .args(["setup".to_string(), build_dir.display().to_string()])
             .args([plan.source.display().to_string()])
             .args(plan.config.options(plan.system).iter().cloned())
-            .args([format!("-Doptimization={}", plan.level.digit())]),
+            .args([format!("-Doptimization={}", plan.level.digit())])
+            .args(plan.level.lto().then_some("-Db_lto=true")),
         System::Autoconf => Step::new(
             "configure",
             plan.source.join("configure"),
@@ -437,7 +438,8 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
         .args([
             format!("CC={}", env["CC"]),
             format!("CFLAGS={}", plan.level.flag()),
-        ]),
+        ])
+        .args(plan.level.lto().then_some("LDFLAGS=-flto")),
     }
     .envs(&env);
     configure.unset.clone_from(&unset);
@@ -505,7 +507,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
         commit: plan.pin.commit.clone(),
         config: plan.config.name.clone(),
         system: plan.system.name().to_string(),
-        level: plan.level.flag().to_string(),
+        level: plan.level.name().to_string(),
         cc: plan.compiler.path.display().to_string(),
         compiler: plan.compiler.version.clone(),
         kind: plan.compiler.kind.name().to_string(),
