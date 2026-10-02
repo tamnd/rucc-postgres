@@ -16,7 +16,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.18.0"
+        default: "0.18.8"
       pin:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
@@ -92,7 +92,7 @@ jobs:
             config: full
     timeout-minutes: 240
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
     steps:
@@ -174,24 +174,24 @@ jobs:
             ${{ runner.temp }}/pg/build/meson-logs/testlog.json
           if-no-files-found: ignore
 
-  # M64, PG5's row: macOS arm64 under autoconf, graded against Apple Clang, with crash reports
-  # from ~/Library/Logs/DiagnosticReports in place of cores. rucc's Darwin driver does not take
-  # -bundle, -bundle_loader, -dynamiclib, -install_name or -exported_symbols_list yet
-  # (tamnd/rucc#2010), so the build stops at the first link of a loadable module until a release
-  # has them. Until then the row runs each night and by hand, not on pull requests, and a failure
-  # here does not fail the run. continue-on-error comes out once a release with #2010 builds it.
+  # M64, PG5's row: macOS arm64 under autoconf and meson, graded against Apple Clang, with crash
+  # reports from ~/Library/Logs/DiagnosticReports in place of cores. It runs each night and by
+  # hand, not on pull requests, since macOS runners are slow to come by. Meson's C99 check
+  # includes <tgmath.h>, which rucc cannot read from Apple's SDK before tamnd/rucc#2632, so a
+  # meson failure does not fail the run until a release has it.
   world-m64:
-    name: world on M64 under autoconf at ${{ matrix.level }}
+    name: world on M64 under ${{ matrix.system }} at ${{ matrix.level }}
     if: github.event_name != 'pull_request'
     runs-on: macos-15
-    continue-on-error: true
+    continue-on-error: ${{ matrix.system == 'meson' }}
     strategy:
       fail-fast: false
       matrix:
         level: [-O0, -O2]
+        system: [autoconf, meson]
     timeout-minutes: 240
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
       HOMEBREW_NO_AUTO_UPDATE: 1
@@ -200,12 +200,12 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: Swatinem/rust-cache@v2.9.2
       # Homebrew's bison and flex, as upstream's CI uses, which are keg only and so go on the
-      # path by hand. GNU make 4 as gmake, since the system's 3.81 has no -O. IPC::Run for the
-      # TAP tests into a local lib for the perl configure finds.
+      # path by hand. GNU make 4 as gmake, since the system's 3.81 has no -O, and meson with
+      # ninja. IPC::Run for the TAP tests into a local lib for the perl configure finds.
       - name: install what the tap tests and the build need
         run: |
           set -euo pipefail
-          brew install bison flex make
+          brew install bison flex make meson ninja
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
           curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$HOME/perl5" IPC::Run
@@ -231,7 +231,7 @@ jobs:
           ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
       - name: rpg build
         run: |
-          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
+          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config minimal \
             --out "$RUNNER_TEMP/pg" --jobs "$JOBS"
       # macOS writes a crash report rather than a core, which rpg triage reads from
       # ~/Library/Logs/DiagnosticReports, so only the debug1 server logs need setting up.
@@ -252,7 +252,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN world on M64 under autoconf at ${{ matrix.level }} with rucc $RUCC_VERSION"
+            echo "### $PIN world on M64 under ${{ matrix.system }} at ${{ matrix.level }} with rucc $RUCC_VERSION"
             echo
             jq -r '"build: \(.phase)" + (if .["first-error"] then ", \(.["first-error"])" else "" end)' \
               "$RUNNER_TEMP/pg/build.json" 2>/dev/null || echo "rpg build did not write build.json"
@@ -270,7 +270,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-M64-${{ env.PIN }}-autoconf${{ matrix.level }}
+          name: rpg-world-M64-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md
@@ -280,6 +280,7 @@ jobs:
             ${{ runner.temp }}/pg/test-world-run.log
             ${{ runner.temp }}/pg/build.log
             ${{ runner.temp }}/pg/configure.log
+            ${{ runner.temp }}/pg/build/meson-logs/testlog.json
           if-no-files-found: ignore
 
   # PG3's fourth criterion: every object is the same when compiled twice, and two builds in
@@ -295,7 +296,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 60
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -322,36 +323,61 @@ jobs:
       - name: build with every object compiled twice
         run: |
           ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
-            --out "$RUNNER_TEMP/first" --jobs "$(nproc)" --twice | tee "$RUNNER_TEMP/first.txt"
-          grep -q '^twice: *0 ' "$RUNNER_TEMP/first.txt"
+            --out "$RUNNER_TEMP/a-pg" --jobs "$(nproc)" --twice | tee "$RUNNER_TEMP/twice.txt"
+          grep -q '^twice: *0 ' "$RUNNER_TEMP/twice.txt"
       - name: build again somewhere else
         run: |
           ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system autoconf --config minimal \
-            --out "$RUNNER_TEMP/again" --jobs "$(nproc)"
+            --out "$RUNNER_TEMP/b-pg" --jobs "$(nproc)"
       # pg_config's answers, the configure arguments and CC among them, are compiled into
       # postgres and pg_config, and CC is the shim inside each build's directory. The two
       # directories have names of the same length, so the one name can stand in for the other
-      # before the bytes are compared.
-      - name: compare the binaries
+      # before the bytes are compared. Every object has to be the same after that. A linked
+      # binary can still differ, because those strings go where the linker merges strings and ld
+      # places merged strings by their contents, so a string holding the path moves when the path
+      # does. Such a binary passes when its sections have the same sizes and it holds the same
+      # strings, and it is named in the summary.
+      - name: compare the objects and the binaries
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
-          different=0
-          for a in $(cd first/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
-            b="again/build/$a"
+          swap() { python3 -c 'import sys; p=sys.argv[1]; d=open(p,"rb").read(); open(p,"wb").write(d.replace(b"/a-pg/", b"/b-pg/"))' "$1"; }
+          objects=0
+          for a in $(cd a-pg/build && find src contrib -name '*.o' | sort); do
+            b="b-pg/build/$a"
             [ -f "$b" ] || continue
-            # Scripts are named pg* too, and strip refuses anything that is not an object.
-            strip --strip-debug -o one "first/build/$a" 2>/dev/null || continue
+            strip --strip-debug -o one "a-pg/build/$a"
             strip --strip-debug -o two "$b"
-            python3 -c 'import sys; p=sys.argv[1]; d=open(p,"rb").read(); open(p,"wb").write(d.replace(b"/first/", b"/again/"))' one
+            swap one
             if ! cmp -s one two; then
-              echo "differs: $a"
-              diff <(strings -n 6 one) <(strings -n 6 two) | head -20 || true
-              different=$((different + 1))
+              echo "object differs: $a"
+              objects=$((objects + 1))
             fi
           done
-          echo "$different binaries differ" | tee -a "$GITHUB_STEP_SUMMARY"
-          [ "$different" = 0 ]
+          different=0
+          placed=""
+          for a in $(cd a-pg/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
+            b="b-pg/build/$a"
+            [ -f "$b" ] || continue
+            # Scripts are named pg* too, and strip refuses anything that is not an object.
+            strip --strip-debug -o one "a-pg/build/$a" 2>/dev/null || continue
+            strip --strip-debug -o two "$b"
+            swap one
+            cmp -s one two && continue
+            if [ "$(size -A one | tail -n +3)" = "$(size -A two | tail -n +3)" ] \
+              && cmp -s <(strings -n 6 one | sort) <(strings -n 6 two | sort); then
+              placed="$placed $a"
+              continue
+            fi
+            echo "differs: $a"
+            diff <(strings -n 6 one) <(strings -n 6 two) | head -20 || true
+            different=$((different + 1))
+          done
+          {
+            echo "$objects objects differ, $different binaries differ"
+            [ -z "$placed" ] || echo "the same apart from where the linker put merged strings:$placed"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$objects" = 0 ] && [ "$different" = 0 ]
 
   # PG3's third criterion: the modules built by rucc loaded into a server built by gcc, and the
   # other way round.
@@ -365,7 +391,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 90
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -413,6 +439,76 @@ jobs:
             ${{ runner.temp }}/rucc/records.jsonl
           if-no-files-found: ignore
 
+  # The same on M64, Apple Clang's modules in rucc's server and the other way round.
+  cross-modules-m64:
+    name: cross-modules on M64 at ${{ matrix.level }}
+    if: github.event_name != 'pull_request'
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [-O0, -O2]
+    timeout-minutes: 120
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what the tap tests and the build need
+        run: |
+          set -euo pipefail
+          brew install bison flex make
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$HOME/perl5" IPC::Run
+          echo "PERL5LIB=$HOME/perl5/lib/perl5" >> "$GITHUB_ENV"
+          echo "JOBS=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-aarch64-apple-darwin"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          shasum -a 256 -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      - name: build with clang and with rucc
+        run: |
+          for cc in clang "$RUCC"; do
+            name=$(basename "$cc")
+            ./target/release/rpg build --pin "$PIN" --cc "$cc" --level ${{ matrix.level }} --system autoconf --config minimal \
+              --out "$RUNNER_TEMP/$name" --jobs "$JOBS"
+          done
+      - name: rucc modules in the clang server
+        run: |
+          ulimit -n 1024
+          ./target/release/rpg cross-modules --server "$RUNNER_TEMP/clang" --modules "$RUNNER_TEMP/rucc"
+      - name: clang modules in the rucc server
+        if: ${{ !cancelled() }}
+        run: |
+          ulimit -n 1024
+          ./target/release/rpg cross-modules --server "$RUNNER_TEMP/rucc" --modules "$RUNNER_TEMP/clang"
+      - name: keep the runs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-cross-modules-M64-${{ env.PIN }}${{ matrix.level }}
+          path: |
+            ${{ runner.temp }}/clang/results/
+            ${{ runner.temp }}/clang/records.jsonl
+            ${{ runner.temp }}/rucc/results/
+            ${{ runner.temp }}/rucc/records.jsonl
+          if-no-files-found: ignore
+
   # PG2's bisection. The suite run looks for a test that fails with rucc's objects and passes with
   # gcc's, and says so when there is none. The planted run has a check that fails whenever
   # int8.o is exactly rucc's, so the search has to end at that object and at the last
@@ -423,7 +519,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PLANTED: src/backend/utils/adt/int8.o
     steps:
@@ -507,7 +603,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 90
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       MINUTES: ${{ github.event_name == 'pull_request' && '4' || '20' }}
     steps:
@@ -570,7 +666,7 @@ jobs:
         system: [autoconf, meson]
     timeout-minutes: 30
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -640,7 +736,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1

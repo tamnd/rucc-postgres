@@ -3,12 +3,12 @@
 //! A module and the server that loads it are compiled separately and meet only through the
 //! calling convention and the layout of the structs they share, so this is the real ABI test
 //! between two compilers. Every shared library under `contrib`, `src/pl` and `src/test/modules`
-//! of the modules build is copied over the one with the same path in the server build, which
-//! keeps a copy of its own first, and the `contrib` and `modules` suites run there under
-//! autoconf, which installs whatever library is in the build tree without relinking it, since the
-//! copy is newer than the objects. The server build's own libraries are put back afterwards,
-//! whether the suites passed or not. Records carry the suite as `cross-contrib` and
-//! `cross-modules`, so they never read as a run of the server build's own modules.
+//! of the modules build, `.so` or on macOS `.dylib`, is copied over the one with the same path in
+//! the server build, which keeps a copy of its own first, and the `contrib` and `modules` suites
+//! run there under autoconf, which installs whatever library is in the build tree without
+//! relinking it, since the copy is newer than the objects. The server build's own libraries are put
+//! back afterwards, whether the suites passed or not. Records carry the suite as `cross-contrib`
+//! and `cross-modules`, so they never read as a run of the server build's own modules.
 
 use crate::build::{BuildInfo, Phase};
 use crate::settings::System;
@@ -50,7 +50,7 @@ fn collect(dir: &Path, root: &Path, found: &mut Vec<PathBuf>) {
                 continue;
             }
             collect(&path, root, found);
-        } else if path.extension().is_some_and(|e| e == "so")
+        } else if path.extension().is_some_and(|e| e == "so" || e == "dylib")
             && let Ok(relative) = path.strip_prefix(root)
         {
             found.push(relative.to_path_buf());
@@ -176,6 +176,29 @@ mod tests {
         assert_eq!(
             shared(&server, &modules),
             [PathBuf::from("contrib/amcheck/amcheck.so")]
+        );
+    }
+
+    #[test]
+    fn libraries_on_macos_end_in_dylib_and_are_found_too() {
+        let root = std::env::temp_dir().join(format!("rpg-cross-dylib-{}", std::process::id()));
+        for file in [
+            "contrib/amcheck/amcheck.dylib",
+            "src/pl/plpgsql/src/plpgsql.dylib",
+            "contrib/amcheck/amcheck.o",
+        ] {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"").unwrap();
+        }
+        let found = libraries(&root);
+        std::fs::remove_dir_all(&root).ok();
+        assert_eq!(
+            found,
+            [
+                PathBuf::from("contrib/amcheck/amcheck.dylib"),
+                PathBuf::from("src/pl/plpgsql/src/plpgsql.dylib"),
+            ]
         );
     }
 
