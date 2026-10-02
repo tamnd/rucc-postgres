@@ -1,0 +1,65 @@
+name: scratch
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/scratch.yml
+
+permissions:
+  contents: read
+
+jobs:
+  mixed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      REF: dbfcc6ea6
+      PIN: REL_18_6
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: tamnd/rucc
+          ref: main
+          fetch-depth: 0
+          path: rucc-src
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y libipc-run-perl gdb
+      - name: build rucc
+        run: |
+          cd rucc-src
+          git checkout -q "$REF"
+          cargo build --release --bin rucc
+          echo "RUCC=$PWD/target/release/rucc" >> "$GITHUB_ENV"
+      - name: build with gcc and with rucc
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+          ./target/release/rpg build --pin "$PIN" --cc gcc --level -O0 --system autoconf --config minimal --out "$RUNNER_TEMP/gcc" --jobs "$(nproc)"
+          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level -O0 --system autoconf --config minimal --out "$RUNNER_TEMP/rucc" --jobs "$(nproc)"
+      - name: initdb by hand
+        run: |
+          set +e
+          cd "$RUNNER_TEMP/rucc/build"
+          make -s install DESTDIR="$RUNNER_TEMP/inst" > /dev/null
+          bin=$(find "$RUNNER_TEMP/inst" -path '*/bin/initdb')
+          lib=$(dirname "$(find "$RUNNER_TEMP/inst" -name 'libpq.so.5' | head -1)")
+          ulimit -c unlimited
+          LD_LIBRARY_PATH="$lib" "$bin" --auth trust --no-sync -D "$RUNNER_TEMP/data" 2>&1 | tail -40
+          LD_LIBRARY_PATH="$lib" gdb -batch -ex run -ex bt -ex 'info registers' --args "$(dirname "$bin")/postgres" --single -D "$RUNNER_TEMP/data" postgres </dev/null 2>&1 | tail -40
+          true
+      - name: rpg mixed
+        run: |
+          ./target/release/rpg mixed --gcc "$RUNNER_TEMP/gcc" --rucc "$RUNNER_TEMP/rucc" --suite regress \
+            --out "$RUNNER_TEMP/mixed" 2>&1 | tail -60
+      - uses: actions/upload-artifact@v4.6.2
+        if: always()
+        with:
+          name: scratch
+          path: |
+            ${{ runner.temp }}/mixed/mixed.md
+            ${{ runner.temp }}/mixed/trial-*/*.log
+          if-no-files-found: ignore
