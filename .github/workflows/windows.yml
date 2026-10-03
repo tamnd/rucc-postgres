@@ -239,11 +239,17 @@ jobs:
           curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
           tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
+      # The minimal configuration without the TAP tests, like the jobs above. Meson refuses to set
+      # them up without Perl's IPC::Run, which MSYS2's UCRT64 Perl does not have, and regress does
+      # not use them.
       - name: rpg build
         timeout-minutes: 90
         run: |
+          set -euo pipefail
+          sed -e 's/^name = "minimal"/name = "minimal-notap"/' -e 's/-Dtap_tests=enabled/-Dtap_tests=disabled/' \
+            -e '/--enable-tap-tests/d' configs/minimal.toml > configs/minimal-notap.toml
           ./target/release/rpg.exe build --pin "$PIN" --cc "$RUCC_CC" --level -O2 --system meson \
-            --config minimal --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
+            --config minimal-notap --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
       - name: rpg test --suite regress
         timeout-minutes: 40
         run: |
