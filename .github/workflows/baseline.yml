@@ -63,16 +63,22 @@ jobs:
         if: inputs.row == 'M64'
         run: |
           set -euo pipefail
-          if [ "${{ inputs.config }}" = full ]; then
-            echo "::error::the full configuration is not set up on M64 yet"
-            exit 1
-          fi
           brew install bison flex make meson ninja
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
           curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$HOME/perl5" IPC::Run
           echo "PERL5LIB=$HOME/perl5/lib/perl5" >> "$GITHUB_ENV"
           echo "CC_REF=clang" >> "$GITHUB_ENV"
+      - name: install the libraries the full configuration links on macOS
+        if: inputs.row == 'M64' && inputs.config == 'full'
+        run: |
+          set -euo pipefail
+          formulae="openssl@3 icu4c lz4 zstd libxml2 libxslt readline pkgconf"
+          brew install $formulae
+          # Several of these are keg-only, so neither the compiler nor pkg-config looks where they are.
+          prefixes="$(brew --prefix)"
+          for f in $formulae; do prefixes="$prefixes:$(brew --prefix "$f")"; done
+          echo "RPG_PREFIXES=$prefixes" >> "$GITHUB_ENV"
       - name: rpg fetch
         run: |
           cargo build --release --workspace

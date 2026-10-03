@@ -127,6 +127,9 @@ pub struct BuildInfo {
     /// The first error line of the step that failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_error: Option<String>,
+    /// The prefixes `RPG_PREFIXES` named, where configure looked for libraries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefixes: Vec<String>,
 }
 
 impl BuildInfo {
@@ -371,6 +374,19 @@ pub fn environment(out: &Path) -> (BTreeMap<String, String>, Vec<String>) {
     let mut env = BTreeMap::new();
     env.insert("PATH".to_string(), format!("{}:{path}", bin.display()));
     env.insert("CC".to_string(), bin.join("cc").display().to_string());
+    let prefixes = prefixes();
+    if !prefixes.is_empty() {
+        let mut dirs: Vec<String> = prefixes
+            .iter()
+            .map(|p| format!("{p}/lib/pkgconfig"))
+            .collect();
+        dirs.extend(
+            std::env::var("PKG_CONFIG_PATH")
+                .ok()
+                .filter(|v| !v.is_empty()),
+        );
+        env.insert("PKG_CONFIG_PATH".to_string(), dirs.join(":"));
+    }
     let unset = [
         "CFLAGS",
         "CPPFLAGS",
@@ -384,6 +400,45 @@ pub fn environment(out: &Path) -> (BTreeMap<String, String>, Vec<String>) {
     .map(String::from)
     .to_vec();
     (env, unset)
+}
+
+/// The prefixes in `RPG_PREFIXES`, a colon separated list of directories with an `include` and a
+/// `lib` beneath each, for libraries a machine keeps where the compiler does not look, as Homebrew
+/// does on macOS. A prefix is a property of the machine rather than of the configuration, so it
+/// comes from the environment and is written to `build.json`.
+#[must_use]
+pub fn prefixes() -> Vec<String> {
+    std::env::var("RPG_PREFIXES")
+        .unwrap_or_default()
+        .split(':')
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// The options that send configure or meson setup to the prefixes for headers and libraries.
+#[must_use]
+pub fn prefix_options(system: System, prefixes: &[String]) -> Vec<String> {
+    if prefixes.is_empty() {
+        return Vec::new();
+    }
+    let dirs = |under: &str, apart: &str| {
+        prefixes
+            .iter()
+            .map(|p| format!("{p}/{under}"))
+            .collect::<Vec<_>>()
+            .join(apart)
+    };
+    match system {
+        System::Autoconf => vec![
+            format!("--with-includes={}", dirs("include", ":")),
+            format!("--with-libraries={}", dirs("lib", ":")),
+        ],
+        System::Meson => vec![
+            format!("-Dextra_include_dirs={}", dirs("include", ",")),
+            format!("-Dextra_lib_dirs={}", dirs("lib", ",")),
+        ],
+    }
 }
 
 /// Run the build.
@@ -418,6 +473,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
     }
     install_shim(plan, trace)?;
     let (env, unset) = environment(&plan.out);
+    let prefixes = prefixes();
 
     let configure_log = plan.out.join("configure.log");
     let build_log = plan.out.join("build.log");
@@ -426,6 +482,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
             .args(["setup".to_string(), build_dir.display().to_string()])
             .args([plan.source.display().to_string()])
             .args(plan.config.options(plan.system).iter().cloned())
+            .args(prefix_options(plan.system, &prefixes))
             .args([format!("-Doptimization={}", plan.level.digit())])
             .args(plan.level.lto().then_some("-Db_lto=true")),
         System::Autoconf => Step::new(
@@ -435,6 +492,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
             &configure_log,
         )
         .args(plan.config.options(plan.system).iter().cloned())
+        .args(prefix_options(plan.system, &prefixes))
         .args([
             format!("CC={}", env["CC"]),
             format!("CFLAGS={}", plan.level.flag()),
@@ -524,6 +582,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
         build_seconds: built.map(|b| round(b.seconds)),
         compiles,
         first_error,
+        prefixes,
     };
     let path = plan.out.join("build.json");
     std::fs::write(
@@ -593,6 +652,29 @@ mod tests {
         assert_eq!(commands[0].file, "../src/backend/parser/gram.c");
         assert_eq!(commands[0].arguments[0], "/usr/bin/gcc-16");
         assert_eq!(commands[0].output.as_deref(), Some("gram.o"));
+    }
+
+    #[test]
+    fn prefixes_become_include_and_library_options() {
+        let prefixes = [
+            "/opt/homebrew".to_string(),
+            "/opt/homebrew/opt/icu4c".to_string(),
+        ];
+        assert_eq!(
+            prefix_options(System::Autoconf, &prefixes),
+            [
+                "--with-includes=/opt/homebrew/include:/opt/homebrew/opt/icu4c/include",
+                "--with-libraries=/opt/homebrew/lib:/opt/homebrew/opt/icu4c/lib",
+            ]
+        );
+        assert_eq!(
+            prefix_options(System::Meson, &prefixes),
+            [
+                "-Dextra_include_dirs=/opt/homebrew/include,/opt/homebrew/opt/icu4c/include",
+                "-Dextra_lib_dirs=/opt/homebrew/lib,/opt/homebrew/opt/icu4c/lib",
+            ]
+        );
+        assert!(prefix_options(System::Meson, &[]).is_empty());
     }
 
     #[test]
