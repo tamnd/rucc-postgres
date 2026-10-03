@@ -601,7 +601,7 @@ jobs:
 
   # PG3's sixth criterion: pgbench against the server rucc built, with the balances checked
   # against the history afterwards and again after crash recovery. The criterion asks for an
-  # hour on L64, and the nightly gives it twenty minutes at each level.
+  # hour on L64, which the nightly gives it at -O2. -O0 runs for twenty minutes.
   stress:
     name: stress at ${{ matrix.level }}
     if: inputs.rows != 'M64'
@@ -610,11 +610,11 @@ jobs:
       fail-fast: false
       matrix:
         level: [-O0, -O2]
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
-      MINUTES: ${{ github.event_name == 'pull_request' && '4' || '20' }}
+      MINUTES: ${{ github.event_name == 'pull_request' && '4' || matrix.level == '-O2' && '60' || '20' }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: Swatinem/rust-cache@v2.9.2
