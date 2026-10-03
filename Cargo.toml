@@ -14,7 +14,7 @@ repository = "https://github.com/tamnd/rucc-postgres"
 
 [workspace.dependencies]
 # The path requirement tracks the workspace version above and has to be bumped with it.
-rpg-shim = { path = "crates/rpg-shim", version = "0.2.2" }
+rpg-shim = { path = "crates/rpg-shim", version = "0.3.0" }
 libc = "0.2"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
