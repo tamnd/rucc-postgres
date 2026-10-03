@@ -50,6 +50,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what configure checks for
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl
       - name: install rucc
         run: |
           set -euo pipefail
