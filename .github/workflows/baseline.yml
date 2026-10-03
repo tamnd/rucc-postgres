@@ -3,8 +3,9 @@
 # baselines/<row>/<pin>/<config>/. The directory is kept as an artifact, and a pull request adds it
 # to git, so a new baseline is read by a person before anything is graded against it.
 #
-# The reference on L64 and LA64 is gcc-14 from Ubuntu, since gcc-16 is only on the servers, and
-# Apple's clang on M64. The baseline records which compiler and machine it came from.
+# The reference on L64 and LA64 is gcc-14 from Ubuntu, since gcc-16 is only on the servers, Apple's
+# clang on M64, and MSYS2's UCRT64 gcc on W64, which has a job of its own because every step there
+# runs in MSYS2's shell. The baseline records which compiler and machine it came from.
 name: baseline
 
 on:
@@ -13,7 +14,7 @@ on:
       row:
         description: the row to make a baseline for
         type: choice
-        options: [L64, LA64, M64]
+        options: [L64, LA64, M64, W64]
         default: LA64
       config:
         description: the configuration
@@ -39,6 +40,7 @@ env:
 jobs:
   baseline:
     name: baseline for ${{ inputs.row }} with the ${{ inputs.config }} configuration under ${{ inputs.system }}
+    if: inputs.row != 'W64'
     runs-on: ${{ inputs.row == 'LA64' && 'ubuntu-24.04-arm' || inputs.row == 'M64' && 'macos-15' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     env:
@@ -98,3 +100,86 @@ jobs:
         with:
           name: baseline-${{ inputs.row }}-${{ inputs.pin }}-${{ inputs.config }}
           path: baselines/${{ inputs.row }}/${{ inputs.pin }}/${{ inputs.config }}/
+
+  # W64 is graded under meson only, as PG6 says, so the system input is not read here.
+  baseline-w64:
+    name: baseline for W64 with the ${{ inputs.config }} configuration under meson
+    if: inputs.row == 'W64'
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      PIN: ${{ inputs.pin }}
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      # Cargo is on the runner's own PATH and not MSYS2's, so rpg is built outside it.
+      - name: build rpg
+        shell: pwsh
+        run: cargo build --release --workspace
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-perl
+            mingw-w64-ucrt-x86_64-make
+            make
+            bison
+            flex
+            diffutils
+            tar
+            bzip2
+      - name: install the libraries the full configuration links
+        if: inputs.config == 'full'
+        run: |
+          pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-icu \
+            mingw-w64-ucrt-x86_64-readline mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-lz4 \
+            mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-libxml2 mingw-w64-ucrt-x86_64-libxslt
+      # Meson sets up the TAP tests only when Perl has IPC::Run, which MSYS2 does not package. On
+      # Windows it needs Win32::Process, which cpanm builds with make. The path is a Windows one,
+      # since this Perl is a native program.
+      - name: install IPC::Run
+        run: |
+          set -euo pipefail
+          lib="$(cygpath -m "$HOME/perl5")"
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run
+          echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
+      # MSYS2's curl and tar fill rpg's cache, since the tar rpg would find is System32's.
+      - name: rpg fetch
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cache="$(cygpath -m "$RUNNER_TEMP/rpg-cache")"
+          echo "RPG_CACHE=$cache" >> "$GITHUB_ENV"
+          export RPG_CACHE="$cache"
+          url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
+          unix="$(cygpath -u "$RUNNER_TEMP/rpg-cache")"
+          mkdir -p "$unix/archives" "$unix/src/$PIN"
+          curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
+          tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
+          ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
+      - name: rpg baseline
+        run: |
+          set -o pipefail
+          ./target/release/rpg.exe baseline --row W64 --pin "$PIN" --cc "$(cygpath -m "$(command -v gcc)")" \
+            --config ${{ inputs.config }} --system meson --level -O2 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
+            | tee "$RUNNER_TEMP/baseline.txt"
+          {
+            echo "### Baseline for W64 $PIN with the ${{ inputs.config }} configuration under meson"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/baseline.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the baseline
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: baseline-W64-${{ inputs.pin }}-${{ inputs.config }}
+          path: baselines/W64/${{ inputs.pin }}/${{ inputs.config }}/
