@@ -134,9 +134,12 @@ impl Profile {
 }
 
 /// The symbol a clone was made from: `foo` for `foo.isra.0`, `foo.part.1` or `foo.cold`. C
-/// names have no dots, so everything from the first one on is the compiler's.
+/// names have no dots, so everything from the first one on is the compiler's. A name that starts
+/// with a dot, like a local label an assembler left in the symbol table, is kept whole, since
+/// samples perf puts there belong to whatever function the label sits in and the name is the
+/// only clue to which.
 fn base_symbol(symbol: &str) -> &str {
-    if symbol.starts_with('[') || symbol.starts_with("0x") {
+    if symbol.starts_with(['[', '.']) || symbol.starts_with("0x") {
         return symbol;
     }
     symbol.split('.').next().unwrap_or(symbol)
@@ -652,6 +655,7 @@ mod tests {
         assert_eq!(base_symbol("heap_getnext.part.0"), "heap_getnext");
         assert_eq!(base_symbol("hash_search.cold"), "hash_search");
         assert_eq!(base_symbol("[unknown]"), "[unknown]");
+        assert_eq!(base_symbol(".Lf_j0"), ".Lf_j0");
     }
 
     #[test]
