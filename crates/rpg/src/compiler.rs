@@ -60,13 +60,21 @@ pub struct Compiler {
     pub kind: Kind,
     /// For rucc, the commit of the checkout the binary sits in, when it sits in one.
     pub commit: Option<String>,
+    /// The words after the compiler in `--cc`, put first on every command line it is given. A
+    /// cross compiler needs its target and sysroot named this way, as `CC` would carry them.
+    pub args: Vec<String>,
 }
 
 impl Compiler {
-    /// Find and identify a compiler named on the command line.
-    pub fn identify(name: &str) -> Result<Self, String> {
+    /// Find and identify a compiler named on the command line, with any arguments after it.
+    pub fn identify(command: &str) -> Result<Self, String> {
+        let mut words = command.split_whitespace();
+        let name = words.next().ok_or("--cc names no compiler")?;
+        let args: Vec<String> = words.map(String::from).collect();
         let path = which(name).ok_or_else(|| format!("cannot find a compiler called {name}"))?;
-        let text = capture(&path, &["--version"])?;
+        let mut probe: Vec<&str> = args.iter().map(String::as_str).collect();
+        probe.push("--version");
+        let text = capture(&path, &probe)?;
         let kind = Kind::of(&text);
         let version = text.lines().next().unwrap_or_default().trim().to_string();
         let commit = (kind == Kind::Rucc)
@@ -77,6 +85,7 @@ impl Compiler {
             version,
             kind,
             commit,
+            args,
         })
     }
 
@@ -106,6 +115,7 @@ impl Compiler {
             return false;
         }
         let ok = Command::new(&self.path)
+            .args(&self.args)
             .arg("-c")
             .arg(&source)
             .arg("-o")
@@ -160,6 +170,14 @@ mod tests {
             Kind::Clang
         );
         assert_eq!(Kind::of("tcc version 0.9.27\n"), Kind::Unknown);
+    }
+
+    #[test]
+    fn the_words_after_the_compiler_are_its_arguments() {
+        let rucc = Compiler::identify("sh -c true").unwrap();
+        assert!(rucc.path.ends_with("sh"), "{}", rucc.path.display());
+        assert_eq!(rucc.args, ["-c", "true"]);
+        assert!(Compiler::identify("  ").is_err());
     }
 
     #[test]

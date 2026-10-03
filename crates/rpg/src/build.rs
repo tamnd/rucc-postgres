@@ -328,7 +328,7 @@ fn shim_binary() -> Result<PathBuf, String> {
         return Ok(PathBuf::from(path));
     }
     let exe = std::env::current_exe().map_err(|e| format!("cannot find rpg itself: {e}"))?;
-    let shim = exe.with_file_name("rpg-cc");
+    let shim = exe.with_file_name(format!("rpg-cc{}", std::env::consts::EXE_SUFFIX));
     if shim.is_file() {
         Ok(shim)
     } else {
@@ -345,7 +345,7 @@ fn install_shim(plan: &Plan, trace: bool) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&bin).map_err(|e| format!("creating {}: {e}", bin.display()))?;
     let shim = shim_binary()?;
     for name in ["cc", "gcc"] {
-        let target = bin.join(name);
+        let target = bin.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
         std::fs::remove_file(&target).ok();
         std::fs::copy(&shim, &target)
             .map_err(|e| format!("copying {} to {}: {e}", shim.display(), target.display()))?;
@@ -355,6 +355,7 @@ fn install_shim(plan: &Plan, trace: bool) -> Result<PathBuf, String> {
         log: plan.out.join("compile.jsonl"),
         rucc_trace: trace,
         twice: plan.twice,
+        args: plan.compiler.args.clone(),
     };
     let path = bin.join(rpg_shim::config::FILE_NAME);
     std::fs::write(&path, config.to_toml())
@@ -372,8 +373,12 @@ pub fn environment(out: &Path) -> (BTreeMap<String, String>, Vec<String>) {
     let bin = out.join("bin");
     let path = std::env::var("PATH").unwrap_or_default();
     let mut env = BTreeMap::new();
-    env.insert("PATH".to_string(), format!("{}:{path}", bin.display()));
-    env.insert("CC".to_string(), bin.join("cc").display().to_string());
+    let path =
+        std::env::join_paths(std::iter::once(bin.clone()).chain(std::env::split_paths(&path)))
+            .map_or(path, |joined| joined.to_string_lossy().into_owned());
+    env.insert("PATH".to_string(), path);
+    let cc = bin.join(format!("cc{}", std::env::consts::EXE_SUFFIX));
+    env.insert("CC".to_string(), cc.display().to_string());
     let prefixes = prefixes();
     if !prefixes.is_empty() {
         let mut dirs: Vec<String> = prefixes

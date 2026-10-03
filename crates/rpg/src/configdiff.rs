@@ -183,7 +183,7 @@ struct Side {
 impl Side {
     fn new(dir: &Path) -> Self {
         // Canonical, so that `.` is never what gets replaced in the files.
-        let out = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        let out = crate::process::canonical(dir).unwrap_or_else(|_| dir.to_path_buf());
         let tree = if out.join("build").join("src").is_dir() {
             out.join("build")
         } else {

@@ -47,7 +47,7 @@ fn main() -> ExitCode {
         .map_or(0.0, |d| d.as_secs_f64());
     let before = usage::children();
     let clock = Instant::now();
-    let run = match run(&config.real, rest, &added, true) {
+    let run = match run(&config.real, &config.args, rest, &added, true) {
         Ok(run) => run,
         Err(e) => {
             eprintln!("rpg-cc: could not run {}: {e}", config.real.display());
@@ -69,7 +69,7 @@ fn main() -> ExitCode {
         && matches!(invocation.mode, Mode::Compile | Mode::Assemble)
         && !outputs.is_empty()
     {
-        twice = Some(compile_again(&config.real, rest, &cwd, &outputs));
+        twice = Some(compile_again(&config, rest, &cwd, &outputs));
     }
 
     let record = CompileRecord {
@@ -123,8 +123,15 @@ struct Run {
 }
 
 /// Run the compiler, copying its standard error to ours when `echo` is set.
-fn run(real: &Path, args: &[String], added: &[String], echo: bool) -> std::io::Result<Run> {
+fn run(
+    real: &Path,
+    first: &[String],
+    args: &[String],
+    added: &[String],
+    echo: bool,
+) -> std::io::Result<Run> {
     let mut child = Command::new(real)
+        .args(first)
         .args(args)
         .args(added)
         .stdin(Stdio::inherit())
@@ -175,8 +182,8 @@ fn signal_of(_status: std::process::ExitStatus) -> Option<i32> {
 }
 
 /// Compile again, quietly, and compare every output with the first compile's.
-fn compile_again(real: &Path, args: &[String], cwd: &Path, first: &[FileDigest]) -> Twice {
-    let ran = run(real, args, &[], false);
+fn compile_again(config: &ShimConfig, args: &[String], cwd: &Path, first: &[FileDigest]) -> Twice {
+    let ran = run(&config.real, &config.args, args, &[], false);
     if !matches!(ran, Ok(Run { exit: Some(0), .. })) {
         return Twice {
             identical: false,
