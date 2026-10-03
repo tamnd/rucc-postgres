@@ -15,6 +15,7 @@ mod mixed;
 mod nightly;
 mod pins;
 mod process;
+mod profile;
 mod records;
 mod regress;
 mod repo;
@@ -53,6 +54,8 @@ fn main() -> ExitCode {
             "stress" => stress_command(&repo, &args),
             "bench" => bench_command(&repo, &args),
             "bench-compare" => bench_compare(&args),
+            "profile" => profile_command(&repo, &args),
+            "profile-compare" => profile_compare(&args),
             "triage" => triage_command(&repo, &args),
             "mixed" => mixed_command(&args),
             "nightly" => nightly_command(&repo, &args),
@@ -442,6 +445,63 @@ fn bench_compare(args: &Args) -> Result<ExitCode, String> {
     let a = bench::Bench::load(Path::new(args.need("a")?))?;
     let b = bench::Bench::load(Path::new(args.need("b")?))?;
     let report = bench::compare(&a, &b);
+    if let Some(out) = args.get("out") {
+        std::fs::write(out, &report).map_err(|e| format!("writing {out}: {e}"))?;
+    }
+    print!("{report}");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn profile_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let out = pick_out(repo, args)?;
+    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let info = build::BuildInfo::load(&out)?;
+    let rows = Rows::load(&repo.rows())?;
+    let row = args.get("row").map(|r| rows.get(r)).transpose()?;
+    let plan = profile::ProfilePlan {
+        suite: suite::SuitePlan {
+            out: out.clone(),
+            timeout: timeout(args, row, &info.level)?,
+            info,
+            suite: "profile".to_string(),
+            label: None,
+            row: row.map(|r| r.name.clone()),
+            baseline: None,
+            run: 1,
+        },
+        loads: args
+            .get("loads")
+            .map_or_else(|| profile::LOADS.join(","), str::to_string)
+            .split(',')
+            .map(str::to_string)
+            .collect(),
+        clients: args.number("clients", process::cores())?,
+        transactions: args.number("transactions", 20_000)?,
+        scale: args.number("scale", 100)?,
+        scale_factor: args.number("sf", 1.0)?,
+        event: args.get("event").map(str::to_string),
+    };
+    let result = profile::run(&plan)?;
+    let path = args
+        .get("records")
+        .map_or_else(|| out.join("records.jsonl"), PathBuf::from);
+    records::append(&path, &profile::records(&plan, &result))?;
+    for line in profile::summary(&result) {
+        println!("{line}");
+    }
+    println!("profile:   {}", profile::json_path(&out).display());
+    println!("records:   {}", path.display());
+    Ok(if result.loads.iter().all(|l| l.failed.is_none()) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
+
+fn profile_compare(args: &Args) -> Result<ExitCode, String> {
+    let a = profile::Profile::load(Path::new(args.need("a")?))?;
+    let b = profile::Profile::load(Path::new(args.need("b")?))?;
+    let report = profile::compare(&a, &b, args.number("top", 40)?);
     if let Some(out) = args.get("out") {
         std::fs::write(out, &report).map_err(|e| format!("writing {out}: {e}"))?;
     }

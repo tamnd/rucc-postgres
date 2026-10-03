@@ -247,14 +247,18 @@ impl Install {
         )
     }
 
+    /// One of the install's programs.
+    pub(crate) fn program(&self, name: &str) -> PathBuf {
+        self.bin.join(name)
+    }
+
     pub(crate) fn step(&self, label: &str, program: &str, log: &str) -> Step {
-        Step::new(
-            label,
-            self.bin.join(program),
-            &self.dir,
-            &self.dir.join(log),
-        )
-        .envs(&self.env)
+        self.tool(label, &self.program(program), log)
+    }
+
+    /// A program from outside the install, run with the install's environment.
+    pub(crate) fn tool(&self, label: &str, program: &Path, log: &str) -> Step {
+        Step::new(label, program, &self.dir, &self.dir.join(log)).envs(&self.env)
     }
 
     pub(crate) fn pg_ctl(&self, action: &[&str], log: &str) -> Result<bool, String> {

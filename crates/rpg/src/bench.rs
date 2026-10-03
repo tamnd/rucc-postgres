@@ -296,7 +296,7 @@ pub fn compare(a: &Bench, b: &Bench) -> String {
 /// disk, so the time goes to the code the compiler made. Autovacuum is off because pgbench
 /// vacuums the tables it writes to before each run, and the analytic set is analyzed once
 /// after it is loaded and never written to again.
-const SETTINGS: &str = "shared_buffers = 1GB\nwork_mem = 64MB\nmaintenance_work_mem = 512MB\n\
+pub(crate) const SETTINGS: &str = "shared_buffers = 1GB\nwork_mem = 64MB\nmaintenance_work_mem = 512MB\n\
      fsync = off\nsynchronous_commit = off\nfull_page_writes = off\nmax_wal_size = 16GB\n\
      checkpoint_timeout = 1h\nautovacuum = off\njit = off\n";
 
