@@ -201,14 +201,27 @@ pub fn capture(program: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// `std::fs::canonicalize`, without the `\\?\` it puts in front of a path on a Windows drive.
+///
+/// ninja runs in the build directory, and windres starts the preprocessor through cmd.exe, which
+/// cannot start in a directory written that way and falls back to the Windows directory.
+pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(path).map(without_verbatim)
+}
+
+fn without_verbatim(path: PathBuf) -> PathBuf {
+    match path.to_str().and_then(|text| text.strip_prefix(r"\\?\")) {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 /// Find a program on `PATH`, or take it as given when it already names a file.
 #[must_use]
 pub fn which(name: &str) -> Option<PathBuf> {
     if name.contains('/') || name.contains('\\') {
         let path = PathBuf::from(name);
-        return path
-            .is_file()
-            .then(|| std::fs::canonicalize(&path).unwrap_or(path));
+        return path.is_file().then(|| canonical(&path).unwrap_or(path));
     }
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
@@ -301,5 +314,17 @@ mod tests {
             Some("../src/x.c:3:1: error: expected ';'")
         );
         std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn a_drive_path_loses_the_verbatim_prefix() {
+        let plain = without_verbatim(PathBuf::from(r"\\?\D:\a\_temp\pg"));
+        assert_eq!(plain, PathBuf::from(r"D:\a\_temp\pg"));
+        let share = PathBuf::from(r"\\?\UNC\server\share");
+        assert_eq!(without_verbatim(share.clone()), share);
+        assert_eq!(
+            without_verbatim(PathBuf::from("/tmp/pg")),
+            PathBuf::from("/tmp/pg")
+        );
     }
 }

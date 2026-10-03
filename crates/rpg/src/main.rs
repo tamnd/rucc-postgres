@@ -138,7 +138,7 @@ fn plan(
         PathBuf::from,
     );
     std::fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
-    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let out = process::canonical(&out).unwrap_or(out);
     Ok(build::Plan {
         pin,
         source,
@@ -273,7 +273,7 @@ fn print_run(run: &suite::SuiteRun, suite: &str) {
 
 fn test_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let out = pick_out(repo, args)?;
-    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let out = process::canonical(&out).unwrap_or(out);
     let info = build::BuildInfo::load(&out)?;
     let suite_name = args.get("suite").unwrap_or("regress").to_string();
     let rows = Rows::load(&repo.rows())?;
@@ -316,9 +316,9 @@ fn test_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
 
 fn cross_command(args: &Args) -> Result<ExitCode, String> {
     let server = PathBuf::from(args.need("server")?);
-    let server = std::fs::canonicalize(&server).unwrap_or(server);
+    let server = process::canonical(&server).unwrap_or(server);
     let modules = PathBuf::from(args.need("modules")?);
-    let modules = std::fs::canonicalize(&modules).unwrap_or(modules);
+    let modules = process::canonical(&modules).unwrap_or(modules);
     let info = build::BuildInfo::load(&server)?;
     let plan = cross::CrossPlan {
         timeout: timeout(args, None, &info.level)?,
@@ -347,7 +347,7 @@ fn cross_command(args: &Args) -> Result<ExitCode, String> {
 
 fn stress_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let out = pick_out(repo, args)?;
-    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let out = process::canonical(&out).unwrap_or(out);
     let info = build::BuildInfo::load(&out)?;
     let rows = Rows::load(&repo.rows())?;
     let row = args.get("row").map(|r| rows.get(r)).transpose()?;
@@ -663,7 +663,7 @@ fn demands_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
 /// Group what a run kept by cause. A measurement rather than a gate, so it exits 0 either way.
 fn triage_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let out = pick_out(repo, args)?;
-    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let out = process::canonical(&out).unwrap_or(out);
     let cores = args
         .get("cores")
         .map_or_else(|| out.join("cores"), PathBuf::from);
@@ -839,7 +839,7 @@ fn config_diff(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
 
 fn repro_command(args: &Args) -> Result<ExitCode, String> {
     let build = PathBuf::from(args.need("build")?);
-    let build = std::fs::canonicalize(&build).unwrap_or(build);
+    let build = process::canonical(&build).unwrap_or(build);
     let file = args.need("file")?;
     let out = args
         .get("out")
@@ -902,7 +902,7 @@ fn asm_audit_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
 /// A build directory named on the command line, made absolute.
 fn build_dir(args: &Args, name: &str) -> Result<PathBuf, String> {
     let dir = PathBuf::from(args.need(name)?);
-    std::fs::canonicalize(&dir).map_err(|e| format!("--{name} {}: {e}", dir.display()))
+    process::canonical(&dir).map_err(|e| format!("--{name} {}: {e}", dir.display()))
 }
 
 fn frames_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {

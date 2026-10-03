@@ -20,7 +20,7 @@
 
 use crate::build::{BuildInfo, lexical};
 use crate::compiler::checkout_commit;
-use crate::process::{capture, shell_quote};
+use crate::process::{canonical, capture, shell_quote};
 use rpg_shim::args::{self, Mode, split_response_file};
 use rpg_shim::record::{CompileRecord, read_log};
 use std::fmt::Write as _;
@@ -345,7 +345,7 @@ pub fn repro(request: &Request) -> Result<Bundle, String> {
 
     std::fs::create_dir_all(request.out)
         .map_err(|e| format!("creating {}: {e}", request.out.display()))?;
-    let dir = std::fs::canonicalize(request.out).unwrap_or_else(|_| request.out.to_path_buf());
+    let dir = canonical(request.out).unwrap_or_else(|_| request.out.to_path_buf());
     let write = |name: &str, text: &str| {
         let path = dir.join(name);
         std::fs::write(&path, text).map_err(|e| format!("writing {}: {e}", path.display()))

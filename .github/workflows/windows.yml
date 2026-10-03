@@ -32,6 +32,7 @@ on:
       - .github/workflows/windows.yml
       - crates/rpg/src/build.rs
       - crates/rpg/src/compiler.rs
+      - crates/rpg/src/process.rs
       - crates/rpg-shim/src/**
 
 concurrency:
