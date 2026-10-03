@@ -9,8 +9,8 @@
 # graded.
 #
 # The last job is the W64 row as the harness sees it: rpg builds the same tree with rucc through
-# its shim and runs the regression suite, so the row gets compile records and test records like
-# the other three.
+# its shim, TAP tests included, and runs every suite under meson, so the row gets compile records
+# and test records like the other three.
 #
 # It runs each Sunday, by hand, and on pull requests that change this file or how rpg starts a
 # compiler.
@@ -173,10 +173,10 @@ jobs:
           if-no-files-found: ignore
 
   rpg:
-    name: rpg build and the regression suite on W64 with rucc
+    name: rpg build and the world suite on W64 with rucc
     runs-on: windows-2022
     continue-on-error: true
-    timeout-minutes: 150
+    timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
@@ -209,6 +209,7 @@ jobs:
             tar
             bzip2
             unzip
+            jq
       - name: install rucc
         run: |
           set -euo pipefail
@@ -222,6 +223,15 @@ jobs:
           cc="$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe") --target=x86_64-windows-gnu"
           cc="$cc --sysroot=$(cygpath -m /ucrt64)"
           echo "RUCC_CC=$cc" >> "$GITHUB_ENV"
+      # Meson sets up the TAP tests only when Perl has IPC::Run, which MSYS2's UCRT64 Perl does not
+      # ship, so it goes into a local lib as on M64. The path is a Windows one, since this Perl is
+      # a native program.
+      - name: install IPC::Run
+        run: |
+          set -euo pipefail
+          lib="$(cygpath -m "$HOME/perl5")"
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run
+          echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
       # rpg runs tar by name, and on Windows that finds the bsdtar in System32 before MSYS2's, which
       # sat on this archive until the step timed out. MSYS2's curl and tar fill rpg's cache instead,
       # and rpg fetch checks the hash and finds the tree already unpacked.
@@ -238,36 +248,35 @@ jobs:
           curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
           tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
-      # The minimal configuration without the TAP tests, like the jobs above. Meson refuses to set
-      # them up without Perl's IPC::Run, which MSYS2's UCRT64 Perl does not have, and regress does
-      # not use them.
       - name: rpg build
         timeout-minutes: 90
         run: |
-          set -euo pipefail
-          sed -e 's/^name = "minimal"/name = "minimal-notap"/' -e 's/-Dtap_tests=enabled/-Dtap_tests=disabled/' \
-            -e '/--enable-tap-tests/d' configs/minimal.toml > configs/minimal-notap.toml
           ./target/release/rpg.exe build --pin "$PIN" --cc "$RUCC_CC" --level -O2 --system meson \
-            --config minimal-notap --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
-      - name: rpg test --suite regress
-        timeout-minutes: 40
+            --config minimal --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
+      - name: rpg test --suite world
+        timeout-minutes: 120
         run: |
           set -o pipefail
-          ./target/release/rpg.exe test --suite regress --row W64 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
-            | tee "$RUNNER_TEMP/regress.txt"
+          ./target/release/rpg.exe test --suite world --row W64 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
+            | tee "$RUNNER_TEMP/world.txt"
       - name: summary
         if: always()
         run: |
           {
-            echo "### $PIN regress on W64 under meson at -O2 through rpg, with rucc $RUCC_VERSION"
+            echo "### $PIN world on W64 under meson at -O2 through rpg, with rucc $RUCC_VERSION"
             echo
-            grep '^regress:' "$RUNNER_TEMP/regress.txt" || echo "rpg test did not get as far as a count"
+            grep '^world:' "$RUNNER_TEMP/world.txt" || echo "rpg test did not get as far as a count"
+            echo
+            echo "Everything that did not pass:"
+            echo
+            jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
+              "$RUNNER_TEMP/pg/records.jsonl" 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
       - name: keep the run
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-w64-${{ env.PIN }}-meson-O2
+          name: rpg-w64-world-${{ env.PIN }}-meson-O2
           path: |
             ${{ runner.temp }}/pg/build.json
             ${{ runner.temp }}/pg/records.jsonl
@@ -275,4 +284,5 @@ jobs:
             ${{ runner.temp }}/pg/configure.log
             ${{ runner.temp }}/pg/build.log
             ${{ runner.temp }}/pg/build/meson-logs/
+            ${{ runner.temp }}/pg/results/
           if-no-files-found: ignore
