@@ -305,8 +305,8 @@ fn parse_line(line: &str) -> Option<RegressResult> {
 /// One line of meson's `testlog.json`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct MesonTest {
-    /// `postgresql:regress / regress/regress` and the like, or `postgresql:regress/regress` from
-    /// the meson MSYS2 ships, which leaves the suite out.
+    /// `postgresql:regress / regress/regress` and the like, or `regress - postgresql:regress/regress`
+    /// from the meson MSYS2 ships, which has no ` / ` in it.
     pub name: String,
     /// `OK`, `FAIL`, `SKIP`, `TIMEOUT`, `ERROR`, `EXPECTEDFAIL` or `UNEXPECTEDPASS`.
     pub result: String,
@@ -328,7 +328,7 @@ pub struct MesonTest {
 }
 
 impl MesonTest {
-    /// The part of the name after the suite, or after the project when there is no suite,
+    /// The part of the name after the suite, or after the project when there is no ` / `,
     /// `regress/regress`.
     #[must_use]
     pub fn short_name(&self) -> &str {
@@ -649,7 +649,7 @@ make[2]: Entering directory '/b/src/bin/pg_ctl'
         assert_eq!(inner.results[0].name, "test_setup");
         assert_eq!(tests[2].result, "TIMEOUT");
         assert!(!tests[2].ok());
-        let line = r#"{"name": "postgresql:regress/regress", "result": "OK"}"#;
+        let line = r#"{"name": "regress - postgresql:regress/regress", "result": "OK"}"#;
         assert_eq!(parse_testlog(line)[0].short_name(), "regress/regress");
         assert!(tests[2].stdout.is_none());
     }
