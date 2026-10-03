@@ -131,6 +131,8 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-perl
+            mingw-w64-ucrt-x86_64-make
+            make
             bison
             flex
             diffutils
@@ -142,8 +144,9 @@ jobs:
           pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-icu \
             mingw-w64-ucrt-x86_64-readline mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-lz4 \
             mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-libxml2 mingw-w64-ucrt-x86_64-libxslt
-      # Meson sets up the TAP tests only when Perl has IPC::Run, which MSYS2's UCRT64 Perl does not
-      # ship. The path is a Windows one, since this Perl is a native program.
+      # Meson sets up the TAP tests only when Perl has IPC::Run, which MSYS2 does not package. On
+      # Windows it needs Win32::Process, which cpanm builds with make. The path is a Windows one,
+      # since this Perl is a native program.
       - name: install IPC::Run
         run: |
           set -euo pipefail
