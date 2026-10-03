@@ -16,7 +16,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.18.8"
+        default: "0.19.0"
       pin:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
@@ -107,7 +107,7 @@ jobs:
             config: full
     timeout-minutes: 240
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
       # pg_ctl gives a server 60 seconds to stop by default, and the xid_wraparound tests leave a
@@ -195,15 +195,12 @@ jobs:
 
   # M64, PG5's row: macOS arm64 under autoconf and meson, graded against Apple Clang, with crash
   # reports from ~/Library/Logs/DiagnosticReports in place of cores. It runs each night and by
-  # hand, not on pull requests, since macOS runners are slow to come by. Meson's C99 check
-  # includes <tgmath.h>, which rucc cannot read from Apple's SDK before tamnd/rucc#2632, so a
-  # meson failure does not fail the run until a release has it. PG8's full configuration runs at
-  # -O2 under autoconf with Homebrew's libraries.
+  # hand, not on pull requests, since macOS runners are slow to come by. PG8's full configuration
+  # runs at -O2 under autoconf with Homebrew's libraries.
   world-m64:
     name: world on M64 under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
     if: github.event_name != 'pull_request'
     runs-on: macos-15
-    continue-on-error: ${{ matrix.system == 'meson' }}
     strategy:
       fail-fast: false
       matrix:
@@ -216,7 +213,7 @@ jobs:
             config: full
     timeout-minutes: 240
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
       # pg_ctl gives a server 60 seconds to stop by default, and the xid_wraparound tests leave a
@@ -335,7 +332,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 60
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -431,7 +428,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 90
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -490,7 +487,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
@@ -559,7 +556,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PLANTED: src/backend/utils/adt/int8.o
     steps:
@@ -643,7 +640,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       MINUTES: ${{ github.event_name == 'pull_request' && '4' || matrix.level == '-O2' && '60' || '20' }}
     steps:
@@ -706,7 +703,7 @@ jobs:
         system: [autoconf, meson]
     timeout-minutes: 30
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -776,7 +773,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
