@@ -4,6 +4,7 @@ mod analytic;
 mod asmaudit;
 mod baseline;
 mod bench;
+mod benchnight;
 mod build;
 mod cli;
 mod compiler;
@@ -54,6 +55,7 @@ fn main() -> ExitCode {
             "stress" => stress_command(&repo, &args),
             "bench" => bench_command(&repo, &args),
             "bench-compare" => bench_compare(&args),
+            "bench-night" => bench_night(&repo, &args),
             "profile" => profile_command(&repo, &args),
             "profile-compare" => profile_compare(&args),
             "triage" => triage_command(&repo, &args),
@@ -449,6 +451,47 @@ fn bench_compare(args: &Args) -> Result<ExitCode, String> {
         std::fs::write(out, &report).map_err(|e| format!("writing {out}: {e}"))?;
     }
     print!("{report}");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn bench_night(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let gcc = bench::Bench::load(Path::new(args.need("gcc")?))?;
+    let rucc = bench::Bench::load(Path::new(args.need("rucc")?))?;
+    let runs = args
+        .get("runs")
+        .map_or_else(|| repo.root.join("runs").join("bench"), PathBuf::from);
+    let reports = args
+        .get("reports")
+        .map_or_else(|| repo.root.join("reports"), PathBuf::from);
+    let threshold: f64 = args.number("threshold", 10.0)?;
+    let recorded = benchnight::record(&gcc, &rucc, &runs, &reports, threshold / 100.0)?;
+    println!("night:       {}", recorded.path.display());
+    match &recorded.before {
+        Some(before) => println!(
+            "since:       {} with {}, {} measures worse",
+            before.date,
+            before.rucc,
+            recorded.worse.len()
+        ),
+        None => println!("since:       no earlier night was run the same way"),
+    }
+    for worse in &recorded.worse {
+        println!(
+            "worse:       {} from {:.2} to {:.2} times as long as gcc",
+            worse.name, worse.before, worse.tonight
+        );
+    }
+    for missing in &recorded.night.missing {
+        println!("left out:    {missing}");
+    }
+    if let (Some(path), Some((title, body))) = (
+        args.get("issue"),
+        benchnight::issue(&recorded, args.get("run-url")),
+    ) {
+        std::fs::write(path, format!("{title}\n{body}"))
+            .map_err(|e| format!("writing {path}: {e}"))?;
+        println!("issue:       {path}");
+    }
     Ok(ExitCode::SUCCESS)
 }
 
