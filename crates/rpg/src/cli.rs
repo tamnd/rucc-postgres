@@ -56,6 +56,15 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
             "out", "row", "records", "timeout", "runs", "seconds", "clients", "scale", "sf", "only",
         ],
         "bench-compare" => &["a", "b", "out"],
+        "bench-night" => &[
+            "gcc",
+            "rucc",
+            "runs",
+            "reports",
+            "threshold",
+            "issue",
+            "run-url",
+        ],
         "profile" => &[
             "out",
             "row",
@@ -104,6 +113,8 @@ usage:
   rpg bench [--out DIR] [--row ROW] [--runs 10] [--seconds 60] [--clients N] [--scale 100]
             [--sf 1] [--only pgbench|analytic|regress] [--records FILE]
   rpg bench-compare --a FILE --b FILE [--out FILE]
+  rpg bench-night --gcc DIR --rucc DIR [--runs DIR] [--reports DIR] [--threshold 10] [--issue FILE]
+                  [--run-url URL]
   rpg profile [--out DIR] [--row ROW] [--loads select-only,tpcb-like,analytic] [--clients N]
               [--transactions 20000] [--scale 100] [--sf 1] [--event E] [--records FILE]
   rpg profile-compare --a FILE --b FILE [--top 40] [--out FILE]
