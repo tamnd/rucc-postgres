@@ -4,6 +4,10 @@
 # with gcc's objects, before any failure on the W64 row can be blamed on rucc. lld 18 mislinked
 # here before (tamnd/rucc#1515), so the job also fails when MSYS2 ships anything older than 19.
 #
+# The third leg is the start of the W64 row: the same build by a released rucc, which links with
+# lld itself, against MSYS2's tree as its sysroot. It does not fail the run until the row is
+# graded.
+#
 # It runs each Sunday, by hand, and on pull requests that change this file.
 name: windows
 
@@ -12,6 +16,9 @@ on:
     - cron: "23 5 * * 0"
   workflow_dispatch:
     inputs:
+      rucc:
+        description: rucc release to build with
+        default: "0.19.0"
       pin:
         description: pin from pins.toml, a release
         default: REL_18_6
@@ -28,14 +35,22 @@ permissions:
 
 jobs:
   gcc-linked:
-    name: gcc's Postgres on W64 linked by ${{ matrix.linker }}
+    name: ${{ matrix.cc }}'s Postgres on W64 linked by ${{ matrix.linker }}
     runs-on: windows-2022
+    continue-on-error: ${{ matrix.cc == 'rucc' }}
     strategy:
       fail-fast: false
       matrix:
-        linker: [bfd, lld]
+        include:
+          - cc: gcc
+            linker: bfd
+          - cc: gcc
+            linker: lld
+          - cc: rucc
+            linker: lld
     timeout-minutes: 120
     env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
     defaults:
       run:
@@ -58,6 +73,7 @@ jobs:
             diffutils
             tar
             bzip2
+            unzip
       - name: the tools and the lld version
         run: |
           set -euo pipefail
@@ -70,6 +86,19 @@ jobs:
             exit 1
           fi
           echo "lld $major is 19 or later" >> "$GITHUB_STEP_SUMMARY"
+      - name: install rucc
+        if: matrix.cc == 'rucc'
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-pc-windows-msvc"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.zip"
+          curl -fsSLO "$base/$name.zip.sha256"
+          sha256sum -c "$name.zip.sha256"
+          unzip -q "$name.zip"
+          "$RUNNER_TEMP/$name/rucc.exe" --version
+          echo "RUCC=$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe")" >> "$GITHUB_ENV"
       - name: fetch the pin
         run: |
           set -euo pipefail
@@ -85,17 +114,23 @@ jobs:
           mkdir src
           tar xjf pg.tar.bz2 -C src --strip-components=1
       # The minimal configuration from configs/minimal.toml, without the TAP tests, which this
-      # check does not need. CC_LD is how meson is told which linker gcc should call.
+      # check does not need. CC_LD is how meson is told which linker gcc should call. rucc is
+      # given MSYS2's UCRT64 tree as its sysroot, so it uses the same headers and libraries as gcc.
       - name: meson setup
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
-          CC=gcc CC_LD=${{ matrix.linker }} meson setup build src \
+          if [ "${{ matrix.cc }}" = rucc ]; then
+            export CC="$RUCC --target=x86_64-windows-gnu --sysroot=$(cygpath -m /ucrt64)"
+          else
+            export CC=gcc CC_LD=${{ matrix.linker }}
+          fi
+          meson setup build src \
             -Dauto_features=disabled -Dicu=disabled -Dreadline=disabled -Dzlib=disabled \
             -Dssl=none -Dnls=disabled -Dlz4=disabled -Dzstd=disabled -Dlibxml=disabled \
             -Dllvm=disabled -Duuid=none -Dtap_tests=disabled -Dcassert=false -Ddebug=true \
             -Doptimization=2 | tee setup.txt
-          if ! grep -q "C linker for the host machine: gcc ld.${{ matrix.linker }}" setup.txt; then
+          if ! grep -q "C linker for the host machine: .* ld.${{ matrix.linker }}" setup.txt; then
             echo "::error::meson did not pick ld.${{ matrix.linker }}"
             exit 1
           fi
@@ -110,7 +145,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN built by gcc and linked by ld.${{ matrix.linker }} on W64"
+            echo "### $PIN built by ${{ matrix.cc }} and linked by ld.${{ matrix.linker }} on W64"
             echo
             grep -E '^(Ok|Fail|Skipped|Timeout|Expected Fail|Unexpected Pass):' "$RUNNER_TEMP/regress.txt" \
               || echo "the regression suite did not get as far as a count"
@@ -119,7 +154,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: w64-gcc-${{ matrix.linker }}-${{ env.PIN }}
+          name: w64-${{ matrix.cc }}-${{ matrix.linker }}-${{ env.PIN }}
           path: |
             ${{ runner.temp }}/setup.txt
             ${{ runner.temp }}/regress.txt
