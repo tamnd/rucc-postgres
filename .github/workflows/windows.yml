@@ -18,7 +18,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.18.8"
+        default: "0.19.0"
       pin:
         description: pin from pins.toml, a release
         default: REL_18_6
@@ -50,7 +50,7 @@ jobs:
             linker: lld
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
     defaults:
       run:
@@ -121,10 +121,7 @@ jobs:
           set -euo pipefail
           cd "$RUNNER_TEMP"
           if [ "${{ matrix.cc }}" = rucc ]; then
-            # Until a release has tamnd/rucc#2632, its tgmath.h comes from main.
-            mkdir -p shim
-            curl -fsSL -o shim/tgmath.h https://raw.githubusercontent.com/tamnd/rucc/main/crates/rucc-session/runtime/include/tgmath.h
-            export CC="$RUCC --target=x86_64-windows-gnu --sysroot=$(cygpath -m /ucrt64) -idirafter $(cygpath -m "$PWD/shim")"
+            export CC="$RUCC --target=x86_64-windows-gnu --sysroot=$(cygpath -m /ucrt64)"
           else
             export CC=gcc CC_LD=${{ matrix.linker }}
           fi
