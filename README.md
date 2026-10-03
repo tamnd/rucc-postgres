@@ -101,7 +101,7 @@ When the real compiler is rucc, which is anything whose `--version` starts with 
 
 `rpg baseline --row L64` builds with the row's reference compiler and runs each suite three times, or `--runs N`. A test that passed every run is `passing`, one that failed every run is `failing`, and one that did both is `flaky`. The sets and the build and test times go to `baselines/<row>/<pin>/<config>/baseline.toml`, next to the records they came from.
 
-The `baseline` workflow does the same on a hosted runner when started by hand, for L64 and LA64 with gcc-14 from Ubuntu and for M64 with Apple clang, and keeps the directory as an artifact. A baseline goes into git by a pull request, so a person reads it before anything is graded against it.
+The `baseline` workflow does the same on a hosted runner when started by hand, for L64 and LA64 with gcc-14 from Ubuntu, for M64 with Apple clang and for W64 with MSYS2's gcc under meson, and keeps the directory as an artifact. A baseline goes into git by a pull request, so a person reads it before anything is graded against it.
 
 For REL_18_6 there are baselines for L64 minimal, from server2 with gcc-16, for L64 full, LA64 minimal and LA64 full, from the workflow with gcc-14, and for M64 minimal and M64 full, from the workflow with Apple clang 17 and Homebrew's libraries. All six passed 231 of 231 regression tests in each of their three runs. The Linux workflow builds took 98 to 102 seconds with 4 jobs, and the M64 ones 87 and 96 seconds with 3.
 
