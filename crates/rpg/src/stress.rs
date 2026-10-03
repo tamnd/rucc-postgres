@@ -18,6 +18,7 @@ use crate::process::{Step, capture};
 use crate::records::{FailClass, Outcome, TestRecord};
 use crate::suite::{SuitePlan, record};
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 /// What a stress run needs beyond the build.
@@ -207,10 +208,11 @@ impl Install {
         let conf = self.data.join("postgresql.conf");
         let mut text = std::fs::read_to_string(&conf)
             .map_err(|e| format!("reading {}: {e}", conf.display()))?;
-        text.push_str(&format!(
+        let _ = write!(
+            text,
             "\nlisten_addresses = ''\nunix_socket_directories = '{}'\nmax_connections = {max_connections}\n{settings}",
             self.socket.display()
-        ));
+        );
         std::fs::write(&conf, text).map_err(|e| format!("writing {}: {e}", conf.display()))
     }
 

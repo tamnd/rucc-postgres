@@ -1,5 +1,6 @@
 //! The `rpg` command line: fetch, build and test the pinned Postgres tree, and record what happened.
 
+mod analytic;
 mod asmaudit;
 mod baseline;
 mod bench;
@@ -390,12 +391,13 @@ fn bench_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
     let info = build::BuildInfo::load(&out)?;
     let rows = Rows::load(&repo.rows())?;
     let row = args.get("row").map(|r| rows.get(r)).transpose()?;
-    let (pgbench, regress) = match args.get("only") {
-        None => (true, true),
-        Some("pgbench") => (true, false),
-        Some("regress") => (false, true),
-        Some(other) => return Err(format!("--only is pgbench or regress, not {other}")),
-    };
+    let only = args.get("only");
+    if let Some(other) = only.filter(|o| !["pgbench", "analytic", "regress"].contains(o)) {
+        return Err(format!(
+            "--only is pgbench, analytic or regress, not {other}"
+        ));
+    }
+    let take = |what: &str| only.is_none_or(|o| o == what);
     let plan = bench::BenchPlan {
         suite: suite::SuitePlan {
             out: out.clone(),
@@ -411,8 +413,10 @@ fn bench_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
         seconds: args.number("seconds", 60)?,
         clients: args.number("clients", process::cores())?,
         scale: args.number("scale", 100)?,
-        pgbench,
-        regress,
+        scale_factor: args.number("sf", 1.0)?,
+        pgbench: take("pgbench"),
+        analytic: take("analytic"),
+        regress: take("regress"),
     };
     let result = bench::run(&plan)?;
     let path = args
