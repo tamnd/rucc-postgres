@@ -197,9 +197,10 @@ jobs:
   # reports from ~/Library/Logs/DiagnosticReports in place of cores. It runs each night and by
   # hand, not on pull requests, since macOS runners are slow to come by. Meson's C99 check
   # includes <tgmath.h>, which rucc cannot read from Apple's SDK before tamnd/rucc#2632, so a
-  # meson failure does not fail the run until a release has it.
+  # meson failure does not fail the run until a release has it. PG8's full configuration runs at
+  # -O2 under autoconf with Homebrew's libraries.
   world-m64:
-    name: world on M64 under ${{ matrix.system }} at ${{ matrix.level }}
+    name: world on M64 under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
     if: github.event_name != 'pull_request'
     runs-on: macos-15
     continue-on-error: ${{ matrix.system == 'meson' }}
@@ -208,6 +209,11 @@ jobs:
       matrix:
         level: [-O0, -O2]
         system: [autoconf, meson]
+        config: [minimal]
+        include:
+          - level: -O2
+            system: autoconf
+            config: full
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
@@ -236,6 +242,16 @@ jobs:
           echo "JOBS=$(sysctl -n hw.ncpu)" >> "$GITHUB_ENV"
           xcrun --show-sdk-path
           clang --version | head -1
+      - name: install the libraries the full configuration links
+        if: matrix.config == 'full'
+        run: |
+          set -euo pipefail
+          formulae="openssl@3 icu4c lz4 zstd libxml2 libxslt readline pkgconf"
+          brew install $formulae
+          # Several of these are keg-only, so neither the compiler nor pkg-config looks where they are.
+          prefixes="$(brew --prefix)"
+          for f in $formulae; do prefixes="$prefixes:$(brew --prefix "$f")"; done
+          echo "RPG_PREFIXES=$prefixes" >> "$GITHUB_ENV"
       - name: install rucc
         run: |
           set -euo pipefail
@@ -254,7 +270,7 @@ jobs:
           ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
       - name: rpg build
         run: |
-          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config minimal \
+          ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config ${{ matrix.config }} \
             --out "$RUNNER_TEMP/pg" --jobs "$JOBS"
       # macOS writes a crash report rather than a core, which rpg triage reads from
       # ~/Library/Logs/DiagnosticReports, so only the debug1 server logs need setting up.
@@ -275,7 +291,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN world on M64 under ${{ matrix.system }} at ${{ matrix.level }} with rucc $RUCC_VERSION"
+            echo "### $PIN world on M64 under ${{ matrix.system }} at ${{ matrix.level }} with the ${{ matrix.config }} configuration and rucc $RUCC_VERSION"
             echo
             jq -r '"build: \(.phase)" + (if .["first-error"] then ", \(.["first-error"])" else "" end)' \
               "$RUNNER_TEMP/pg/build.json" 2>/dev/null || echo "rpg build did not write build.json"
@@ -293,7 +309,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-M64-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}
+          name: rpg-world-M64-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md
