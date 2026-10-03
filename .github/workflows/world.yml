@@ -403,14 +403,15 @@ jobs:
           [ "$objects" = 0 ] && [ "$different" = 0 ]
 
   # PG3's third criterion: the modules built by rucc loaded into a server built by gcc, and the
-  # other way round.
+  # other way round, on L64 and, for PG8's, on LA64 too.
   cross-modules:
-    name: cross-modules at ${{ matrix.level }}
+    name: cross-modules on ${{ matrix.row }} at ${{ matrix.level }}
     if: inputs.rows != 'M64'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
+        row: [L64, LA64]
         level: [-O0, -O2]
     timeout-minutes: 90
     env:
@@ -426,7 +427,7 @@ jobs:
       - name: install rucc
         run: |
           set -euo pipefail
-          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          name="rucc-v$RUCC_VERSION-$(uname -m)-unknown-linux-gnu"
           cd "$RUNNER_TEMP"
           base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
           curl -fsSLO "$base/$name.tar.gz"
@@ -454,7 +455,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-cross-modules-${{ env.PIN }}${{ matrix.level }}
+          name: rpg-cross-modules-${{ matrix.row }}-${{ env.PIN }}${{ matrix.level }}
           path: |
             ${{ runner.temp }}/gcc/results/
             ${{ runner.temp }}/gcc/records.jsonl
