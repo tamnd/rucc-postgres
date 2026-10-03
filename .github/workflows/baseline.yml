@@ -1,0 +1,92 @@
+# What the reference compiler gets on a row, made on a hosted runner. `rpg baseline` builds the pin
+# with the row's reference compiler, runs the regression suite three times and writes the sets to
+# baselines/<row>/<pin>/<config>/. The directory is kept as an artifact, and a pull request adds it
+# to git, so a new baseline is read by a person before anything is graded against it.
+#
+# The reference on L64 and LA64 is gcc-14 from Ubuntu, since gcc-16 is only on the servers, and
+# Apple's clang on M64. The baseline records which compiler and machine it came from.
+name: baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      row:
+        description: the row to make a baseline for
+        type: choice
+        options: [L64, LA64, M64]
+        default: LA64
+      config:
+        description: the configuration
+        type: choice
+        options: [minimal, full]
+        default: full
+      system:
+        description: the build system
+        type: choice
+        options: [autoconf, meson]
+        default: autoconf
+      pin:
+        description: pin from pins.toml
+        default: REL_18_6
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  baseline:
+    name: baseline for ${{ inputs.row }} with the ${{ inputs.config }} configuration under ${{ inputs.system }}
+    runs-on: ${{ inputs.row == 'LA64' && 'ubuntu-24.04-arm' || inputs.row == 'M64' && 'macos-15' || 'ubuntu-24.04' }}
+    timeout-minutes: 180
+    env:
+      PIN: ${{ inputs.pin }}
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what the build needs on Linux
+        if: inputs.row != 'M64'
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y gcc-14 libipc-run-perl meson ninja-build bison flex
+          echo "CC_REF=gcc-14" >> "$GITHUB_ENV"
+      - name: install the libraries the full configuration links on Linux
+        if: inputs.row != 'M64' && inputs.config == 'full'
+        run: |
+          sudo apt-get install -y libssl-dev libicu-dev libreadline-dev zlib1g-dev liblz4-dev libzstd-dev \
+            libxml2-dev libxslt1-dev pkg-config
+      - name: install what the build needs on macOS
+        if: inputs.row == 'M64'
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.config }}" = full ]; then
+            echo "::error::the full configuration is not set up on M64 yet"
+            exit 1
+          fi
+          brew install bison flex make meson ninja
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          echo "CC_REF=clang" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      - name: rpg baseline
+        run: |
+          set -o pipefail
+          ./target/release/rpg baseline --row ${{ inputs.row }} --pin "$PIN" --cc "$CC_REF" --config ${{ inputs.config }} \
+            --system ${{ inputs.system }} --level -O2 --out "$RUNNER_TEMP/pg" | tee "$RUNNER_TEMP/baseline.txt"
+          {
+            echo "### Baseline for ${{ inputs.row }} $PIN with the ${{ inputs.config }} configuration under ${{ inputs.system }}"
+            echo
+            sed 's/^/    /' "$RUNNER_TEMP/baseline.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the baseline
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: baseline-${{ inputs.row }}-${{ inputs.pin }}-${{ inputs.config }}
+          path: baselines/${{ inputs.row }}/${{ inputs.pin }}/${{ inputs.config }}/
