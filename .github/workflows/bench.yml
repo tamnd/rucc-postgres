@@ -1,0 +1,101 @@
+# PG7's numbers: rpg bench against a gcc build and a rucc build of the same pin at -O2, one after
+# the other on one runner, and rpg bench-compare between them in the job summary. A shared runner
+# is a noisy machine, so these numbers say which way things are going rather than whether the
+# exit criterion holds, which is measured on server3. It runs each Sunday at the full sizes, by
+# hand, and at small sizes on the pull requests that change how the measures are taken.
+name: bench
+
+on:
+  schedule:
+    - cron: "23 5 * * 0"
+  workflow_dispatch:
+    inputs:
+      rucc:
+        description: rucc release to build with
+        default: "0.18.8"
+      pin:
+        description: pin from pins.toml, a release or a branch
+        default: REL_18_6
+      runs:
+        description: how many times each measure is taken
+        default: "10"
+  pull_request:
+    paths:
+      - .github/workflows/bench.yml
+      - crates/rpg/src/bench.rs
+      - crates/rpg/src/analytic.rs
+      - crates/rpg/src/analytic/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  bench:
+    name: bench gcc against rucc at -O2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}
+      PIN: ${{ inputs.pin || 'REL_18_6' }}
+      # A pull request only checks that every measure runs, so it takes small sizes.
+      SIZES: ${{ github.event_name == 'pull_request' && '--runs 3 --seconds 20 --scale 10 --sf 0.1' || format('--runs {0}', inputs.runs || '10') }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: install what configure checks for
+        run: |
+          sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
+          sudo apt-get install -y libipc-run-perl
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.tar.gz"
+          curl -fsSLO "$base/$name.tar.gz.sha256"
+          sha256sum -c "$name.tar.gz.sha256"
+          tar xzf "$name.tar.gz"
+          echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        run: |
+          cargo build --release --workspace
+          ./target/release/rpg fetch --pin "$PIN" --no-upstream-check
+      - name: build with gcc and with rucc
+        run: |
+          for cc in gcc "$RUCC"; do
+            name=$(basename "$cc")
+            ./target/release/rpg build --pin "$PIN" --cc "$cc" --level -O2 --system autoconf --config minimal \
+              --out "$RUNNER_TEMP/$name" --jobs "$(nproc)"
+          done
+      - name: bench the gcc server
+        run: ./target/release/rpg bench --out "$RUNNER_TEMP/gcc" $SIZES
+      - name: bench the rucc server
+        if: ${{ !cancelled() }}
+        run: ./target/release/rpg bench --out "$RUNNER_TEMP/rucc" $SIZES
+      - name: compare
+        if: ${{ !cancelled() }}
+        run: |
+          ./target/release/rpg bench-compare --a "$RUNNER_TEMP/gcc" --b "$RUNNER_TEMP/rucc" \
+            --out "$RUNNER_TEMP/compare.md"
+          cat "$RUNNER_TEMP/compare.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the runs
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-bench-${{ env.PIN }}-O2
+          path: |
+            ${{ runner.temp }}/compare.md
+            ${{ runner.temp }}/gcc/bench/
+            ${{ runner.temp }}/gcc/records.jsonl
+            ${{ runner.temp }}/rucc/bench/
+            ${{ runner.temp }}/rucc/records.jsonl
+          if-no-files-found: ignore
