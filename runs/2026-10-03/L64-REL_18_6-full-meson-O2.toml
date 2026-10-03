@@ -1,0 +1,15 @@
+date = "2026-10-03"
+row = "L64"
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+config = "full"
+system = "meson"
+level = "-O2"
+compiler = "rucc 0.18.8"
+host = "runnervm8df0l"
+built = true
+failing = ["world/xid_wraparound/001_emergency_vacuum", "world/xid_wraparound/002_limits"]
+
+[counts]
+failed = 2
+passed = 940

@@ -1,0 +1,14 @@
+date = "2026-10-03"
+row = "M64"
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+config = "minimal"
+system = "meson"
+level = "-O0"
+compiler = "rucc 0.18.8"
+host = "sjc22-be107-70362d97-2bea-434a-9585-cd3dd5450d5b-3E91C237CC6E"
+built = false
+first-error = "Compiler for C supports link arguments -Wl,-undefined,error -Werror: NO"
+failing = []
+
+[counts]
