@@ -33,6 +33,7 @@ on:
       - crates/rpg/src/build.rs
       - crates/rpg/src/compiler.rs
       - crates/rpg/src/process.rs
+      - crates/rpg/src/regress.rs
       - crates/rpg-shim/src/**
 
 concurrency:
