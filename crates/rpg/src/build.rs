@@ -512,11 +512,16 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
     let build_started = now();
     if configured.ok && !plan.configure_only {
         let mut step = match plan.system {
+            // The ecpg test programs are only in the testprep alias. The Ubuntu runners built them
+            // with the default target anyway, the macOS one did not, so they are asked for here
+            // the way upstream's CI does.
             System::Meson => Step::new("ninja", "ninja", &plan.out, &build_log).args([
                 "-C".to_string(),
                 build_dir.display().to_string(),
                 "-j".to_string(),
                 plan.jobs.to_string(),
+                "all".to_string(),
+                "testprep".to_string(),
             ]),
             System::Autoconf => Step::new(
                 "make world-bin",
