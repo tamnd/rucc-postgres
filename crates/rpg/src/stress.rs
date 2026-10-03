@@ -145,8 +145,8 @@ pub fn find_bin(root: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The programs of the install, run with its own libraries.
-struct Install {
+/// The programs of the install, run with its own libraries, and a server of its own to run.
+pub(crate) struct Install {
     bin: PathBuf,
     env: BTreeMap<String, String>,
     socket: PathBuf,
@@ -155,7 +155,97 @@ struct Install {
 }
 
 impl Install {
-    fn step(&self, label: &str, program: &str, log: &str) -> Step {
+    /// Install the build into its temporary install and get ready to run a server from it, with
+    /// the logs in `dir`, which is emptied first.
+    pub(crate) fn prepare(plan: &SuitePlan, dir: &Path, tag: &str) -> Result<Self, String> {
+        if dir.exists() {
+            std::fs::remove_dir_all(dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
+        }
+        std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        let bin = temp_install(plan, dir)?;
+        let lib = bin.with_file_name("lib");
+        // A socket path has to fit in about a hundred bytes, which a build directory may not.
+        let socket = std::env::temp_dir().join(format!("rpg-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&socket)
+            .map_err(|e| format!("creating {}: {e}", socket.display()))?;
+        let mut env = BTreeMap::new();
+        env.insert("LD_LIBRARY_PATH".to_string(), lib.display().to_string());
+        env.insert("PGHOST".to_string(), socket.display().to_string());
+        env.insert("PGDATABASE".to_string(), "postgres".to_string());
+        env.insert("PGUSER".to_string(), "postgres".to_string());
+        Ok(Self {
+            bin,
+            env,
+            socket,
+            data: dir.join("data"),
+            dir: dir.to_path_buf(),
+        })
+    }
+
+    /// The directory the logs go to.
+    pub(crate) fn dir(&self) -> &Path {
+        &self.dir
+    }
+
+    /// The data directory.
+    pub(crate) fn data(&self) -> &Path {
+        &self.data
+    }
+
+    /// Make the data directory and add `settings` to its `postgresql.conf`, after the lines that
+    /// keep the server on the private socket.
+    pub(crate) fn initdb(&self, max_connections: usize, settings: &str) -> Result<(), String> {
+        let data = path_str(&self.data)?;
+        if !self
+            .step("initdb", "initdb", "initdb.log")
+            .args(["-D", data, "-A", "trust", "-N", "-U", "postgres"])
+            .run()?
+            .ok
+        {
+            return Err("initdb failed".into());
+        }
+        let conf = self.data.join("postgresql.conf");
+        let mut text = std::fs::read_to_string(&conf)
+            .map_err(|e| format!("reading {}: {e}", conf.display()))?;
+        text.push_str(&format!(
+            "\nlisten_addresses = ''\nunix_socket_directories = '{}'\nmax_connections = {max_connections}\n{settings}",
+            self.socket.display()
+        ));
+        std::fs::write(&conf, text).map_err(|e| format!("writing {}: {e}", conf.display()))
+    }
+
+    /// Stop whatever server is running without waiting for it, and remove the socket directory.
+    pub(crate) fn finish(&self) {
+        self.pg_ctl(&["-m", "immediate", "stop"], "stop.log").ok();
+        std::fs::remove_dir_all(&self.socket).ok();
+    }
+
+    /// What psql prints for a query, unaligned and without headers.
+    pub(crate) fn psql(&self, query: &str) -> Result<String, String> {
+        let psql = self.bin.join("psql");
+        // psql needs the install's libpq, which capture cannot set, so it goes through env(1).
+        let library = format!("LD_LIBRARY_PATH={}", self.env["LD_LIBRARY_PATH"]);
+        capture(
+            Path::new("env"),
+            &[
+                &library,
+                path_str(&psql)?,
+                "-XAtq",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-h",
+                path_str(&self.socket)?,
+                "-U",
+                "postgres",
+                "-d",
+                "postgres",
+                "-c",
+                query,
+            ],
+        )
+    }
+
+    pub(crate) fn step(&self, label: &str, program: &str, log: &str) -> Step {
         Step::new(
             label,
             self.bin.join(program),
@@ -165,7 +255,7 @@ impl Install {
         .envs(&self.env)
     }
 
-    fn pg_ctl(&self, action: &[&str], log: &str) -> Result<bool, String> {
+    pub(crate) fn pg_ctl(&self, action: &[&str], log: &str) -> Result<bool, String> {
         let server_log = self.dir.join("server.log");
         let mut args = vec!["-D", path_str(&self.data)?, "-w", "-t", "300"];
         if action == ["start"] {
@@ -180,36 +270,17 @@ impl Install {
     }
 
     fn sums(&self) -> Result<[i64; 4], String> {
-        let psql = self.bin.join("psql");
-        let socket = path_str(&self.socket)?;
         let query = "select (select sum(abalance) from pgbench_accounts), \
             (select sum(tbalance) from pgbench_tellers), \
             (select sum(bbalance) from pgbench_branches), \
             (select coalesce(sum(delta), 0) from pgbench_history)";
-        // psql needs the install's libpq, which capture cannot set, so it goes through env(1).
-        let library = format!("LD_LIBRARY_PATH={}", self.env["LD_LIBRARY_PATH"]);
-        let text = capture(
-            Path::new("env"),
-            &[
-                &library,
-                path_str(&psql)?,
-                "-XAtq",
-                "-h",
-                socket,
-                "-U",
-                "postgres",
-                "-d",
-                "postgres",
-                "-c",
-                query,
-            ],
-        )?;
+        let text = self.psql(query)?;
         parse_sums(&text)
             .ok_or_else(|| format!("could not read the sums from psql: {}", text.trim()))
     }
 }
 
-fn path_str(path: &Path) -> Result<&str, String> {
+pub(crate) fn path_str(path: &Path) -> Result<&str, String> {
     path.to_str()
         .ok_or_else(|| format!("{} is not UTF-8", path.display()))
 }
@@ -317,33 +388,10 @@ pub fn run(plan: &StressPlan) -> Result<Vec<Check>, String> {
     }
     crate::suite::refuse_root()?;
     let dir = plan.suite.out.join("stress");
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
-    }
-    std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
-    let bin = temp_install(&plan.suite, &dir)?;
-    let lib = bin.with_file_name("lib");
-    // A socket path has to fit in about a hundred bytes, which a build directory may not.
-    let socket = std::env::temp_dir().join(format!("rpg-stress-{}", std::process::id()));
-    std::fs::create_dir_all(&socket).map_err(|e| format!("creating {}: {e}", socket.display()))?;
-    let mut env = BTreeMap::new();
-    env.insert("LD_LIBRARY_PATH".to_string(), lib.display().to_string());
-    env.insert("PGHOST".to_string(), socket.display().to_string());
-    env.insert("PGDATABASE".to_string(), "postgres".to_string());
-    env.insert("PGUSER".to_string(), "postgres".to_string());
-    let install = Install {
-        bin,
-        env,
-        socket: socket.clone(),
-        data: dir.join("data"),
-        dir: dir.clone(),
-    };
+    let install = Install::prepare(&plan.suite, &dir, "stress")?;
     let result = session(&install, plan);
     // Whatever happened, leave no server running.
-    install
-        .pg_ctl(&["-m", "immediate", "stop"], "stop.log")
-        .ok();
-    std::fs::remove_dir_all(&socket).ok();
+    install.finish();
     let mut checks = result?;
     let log = std::fs::read_to_string(dir.join("server.log")).unwrap_or_default();
     checks.push(match trouble(&log) {
@@ -362,29 +410,13 @@ pub fn run(plan: &StressPlan) -> Result<Vec<Check>, String> {
 }
 
 fn session(install: &Install, plan: &StressPlan) -> Result<Vec<Check>, String> {
-    let data = path_str(&install.data)?;
-    if !install
-        .step("initdb", "initdb", "initdb.log")
-        .args(["-D", data, "-A", "trust", "-N", "-U", "postgres"])
-        .run()?
-        .ok
-    {
-        return Err("initdb failed".into());
-    }
     // A small buffer pool and frequent checkpoints keep the buffer replacement and the
     // checkpointer busy while pgbench runs, and they are where the lock free code is.
-    let settings = format!(
-        "\nlisten_addresses = ''\nunix_socket_directories = '{}'\nmax_connections = {}\n\
-         shared_buffers = 16MB\ncheckpoint_timeout = 30s\nmax_wal_size = 64MB\n\
+    install.initdb(
+        plan.clients.max(1) + 10,
+        "shared_buffers = 16MB\ncheckpoint_timeout = 30s\nmax_wal_size = 64MB\n\
          synchronous_commit = off\nlog_checkpoints = on\n",
-        install.socket.display(),
-        plan.clients.max(1) + 10
-    );
-    let conf = install.data.join("postgresql.conf");
-    let mut text =
-        std::fs::read_to_string(&conf).map_err(|e| format!("reading {}: {e}", conf.display()))?;
-    text.push_str(&settings);
-    std::fs::write(&conf, text).map_err(|e| format!("writing {}: {e}", conf.display()))?;
+    )?;
     if !install.pg_ctl(&["start"], "start.log")? {
         return Err("the server did not start".into());
     }

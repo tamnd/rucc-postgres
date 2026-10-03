@@ -2,6 +2,7 @@
 
 mod asmaudit;
 mod baseline;
+mod bench;
 mod build;
 mod cli;
 mod compiler;
@@ -49,6 +50,8 @@ fn main() -> ExitCode {
             "frames" => frames_command(&repo, &args),
             "cross-modules" => cross_command(&args),
             "stress" => stress_command(&repo, &args),
+            "bench" => bench_command(&repo, &args),
+            "bench-compare" => bench_compare(&args),
             "triage" => triage_command(&repo, &args),
             "mixed" => mixed_command(&args),
             "nightly" => nightly_command(&repo, &args),
@@ -379,6 +382,67 @@ fn stress_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
             ExitCode::FAILURE
         },
     )
+}
+
+fn bench_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
+    let out = pick_out(repo, args)?;
+    let out = std::fs::canonicalize(&out).unwrap_or(out);
+    let info = build::BuildInfo::load(&out)?;
+    let rows = Rows::load(&repo.rows())?;
+    let row = args.get("row").map(|r| rows.get(r)).transpose()?;
+    let (pgbench, regress) = match args.get("only") {
+        None => (true, true),
+        Some("pgbench") => (true, false),
+        Some("regress") => (false, true),
+        Some(other) => return Err(format!("--only is pgbench or regress, not {other}")),
+    };
+    let plan = bench::BenchPlan {
+        suite: suite::SuitePlan {
+            out: out.clone(),
+            timeout: timeout(args, row, &info.level)?,
+            info,
+            suite: "bench".to_string(),
+            label: None,
+            row: row.map(|r| r.name.clone()),
+            baseline: None,
+            run: 1,
+        },
+        runs: args.number("runs", 10)?,
+        seconds: args.number("seconds", 60)?,
+        clients: args.number("clients", process::cores())?,
+        scale: args.number("scale", 100)?,
+        pgbench,
+        regress,
+    };
+    let result = bench::run(&plan)?;
+    let path = args
+        .get("records")
+        .map_or_else(|| out.join("records.jsonl"), PathBuf::from);
+    records::append(&path, &bench::records(&plan, &result))?;
+    for line in bench::summary(&result) {
+        println!("{line}");
+    }
+    println!(
+        "bench:     {}",
+        out.join("bench").join("bench.json").display()
+    );
+    println!("records:   {}", path.display());
+    Ok(if result.measures.iter().all(|m| m.failed.is_none()) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
+
+fn bench_compare(args: &Args) -> Result<ExitCode, String> {
+    let a = bench::Bench::load(Path::new(args.need("a")?))?;
+    let b = bench::Bench::load(Path::new(args.need("b")?))?;
+    let report = bench::compare(&a, &b);
+    if let Some(out) = args.get("out") {
+        std::fs::write(out, &report).map_err(|e| format!("writing {out}: {e}"))?;
+    }
+    print!("{report}");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn baseline_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {

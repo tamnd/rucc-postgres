@@ -52,6 +52,10 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
         "stress" => &[
             "out", "row", "records", "run", "timeout", "minutes", "clients", "scale",
         ],
+        "bench" => &[
+            "out", "row", "records", "timeout", "runs", "seconds", "clients", "scale", "only",
+        ],
+        "bench-compare" => &["a", "b", "out"],
         "triage" => &["out", "cores", "reports", "since"],
         "mixed" => &[
             "gcc", "rucc", "suite", "check", "under", "out", "timeout", "no-fuel",
@@ -84,6 +88,9 @@ usage:
             [--timeout S] [--no-fuel]
   rpg nightly --nights DIR [--runs DIR] [--reports DIR] [--issue FILE] [--run-url URL]
   rpg stress [--out DIR] [--row ROW] [--minutes 5] [--clients N] [--scale 10] [--records FILE]
+  rpg bench [--out DIR] [--row ROW] [--runs 10] [--seconds 60] [--clients N] [--scale 100]
+            [--only pgbench|regress] [--records FILE]
+  rpg bench-compare --a FILE --b FILE [--out FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked
 sources go to RPG_CACHE, or ~/.cache/rpg. Build directories default to work/ in the repository.
