@@ -99,6 +99,12 @@ jobs:
             level: -O2
             system: meson
             config: full
+          # And on LA64, where the libraries are aarch64 builds from the same distribution, so the
+          # ABI that meets them is the other one rucc speaks.
+          - row: LA64
+            level: -O2
+            system: autoconf
+            config: full
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.18.8' }}

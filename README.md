@@ -82,6 +82,8 @@ When the real compiler is rucc, which is anything whose `--version` starts with 
 
 `rpg baseline --row L64` builds with the row's reference compiler and runs each suite three times, or `--runs N`. A test that passed every run is `passing`, one that failed every run is `failing`, and one that did both is `flaky`. The sets and the build and test times go to `baselines/<row>/<pin>/<config>/baseline.toml`, next to the records they came from.
 
+The `baseline` workflow does the same on a hosted runner when started by hand, for L64 and LA64 with gcc-14 from Ubuntu and for M64 with Apple clang, and keeps the directory as an artifact. A baseline goes into git by a pull request, so a person reads it before anything is graded against it.
+
 ## Demands
 
 `demands.toml` is what the pinned tree asks of a C compiler beyond plain C11, found by a text scan of `src` and `contrib` with comments and literal contents removed: 128 bit integers, overflow, atomic and bit builtins, computed goto, inline assembly, target attributes, x86 and Arm intrinsics, cpuid, `sigsetjmp`, `PGDLLIMPORT` and so on, plus one entry per `__builtin_*` name, per attribute and per `pg_attribute_*` macro. Each entry lists the lines per file. The `rucc-status` and `rucc-issue` fields are for a person to fill in, and `rpg demands` keeps them when it rescans.
