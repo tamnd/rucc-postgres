@@ -1,5 +1,6 @@
 # PG7's numbers: rpg bench against a gcc build and a rucc build of the same pin at -O2, one after
-# the other on one runner, and rpg bench-compare between them in the job summary. A shared runner
+# the other on one runner, and rpg bench-compare between them in the job summary, then rpg profile
+# on both servers and rpg profile-compare to say where the difference goes. A shared runner
 # is a noisy machine, so these numbers say which way things are going rather than whether the
 # exit criterion holds, which is measured on server3. It runs each Sunday at the full sizes, by
 # hand, and at small sizes on the pull requests that change how the measures are taken.
@@ -25,6 +26,7 @@ on:
       - crates/rpg/src/bench.rs
       - crates/rpg/src/analytic.rs
       - crates/rpg/src/analytic/**
+      - crates/rpg/src/profile.rs
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,6 +49,7 @@ jobs:
       PIN: ${{ inputs.pin || 'REL_18_6' }}
       # A pull request only checks that every measure runs, so it takes small sizes.
       SIZES: ${{ github.event_name == 'pull_request' && '--runs 3 --seconds 20 --scale 10 --sf 0.1' || format('--runs {0}', inputs.runs || '10') }}
+      PROFILE_SIZES: ${{ github.event_name == 'pull_request' && '--transactions 2000 --scale 10 --sf 0.1' || '' }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: Swatinem/rust-cache@v2.9.2
@@ -54,6 +57,12 @@ jobs:
         run: |
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
           sudo apt-get install -y libipc-run-perl
+      - name: install perf
+        run: |
+          sudo apt-get install -y linux-tools-common "linux-tools-$(uname -r)"
+          # Ubuntu keeps perf from users entirely, and rpg profile only asks for its own processes.
+          sudo sysctl -w kernel.perf_event_paranoid=1
+          perf --version
       - name: install rucc
         run: |
           set -euo pipefail
@@ -87,6 +96,18 @@ jobs:
           ./target/release/rpg bench-compare --a "$RUNNER_TEMP/gcc" --b "$RUNNER_TEMP/rucc" \
             --out "$RUNNER_TEMP/compare.md"
           cat "$RUNNER_TEMP/compare.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: profile the gcc server
+        if: ${{ !cancelled() }}
+        run: ./target/release/rpg profile --out "$RUNNER_TEMP/gcc" $PROFILE_SIZES
+      - name: profile the rucc server
+        if: ${{ !cancelled() }}
+        run: ./target/release/rpg profile --out "$RUNNER_TEMP/rucc" $PROFILE_SIZES
+      - name: compare the profiles
+        if: ${{ !cancelled() }}
+        run: |
+          ./target/release/rpg profile-compare --a "$RUNNER_TEMP/gcc" --b "$RUNNER_TEMP/rucc" \
+            --out "$RUNNER_TEMP/profile.md"
+          cat "$RUNNER_TEMP/profile.md" >> "$GITHUB_STEP_SUMMARY"
       - name: keep the runs
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -94,6 +115,9 @@ jobs:
           name: rpg-bench-${{ env.PIN }}-O2
           path: |
             ${{ runner.temp }}/compare.md
+            ${{ runner.temp }}/profile.md
+            ${{ runner.temp }}/gcc/profile/profile.json
+            ${{ runner.temp }}/rucc/profile/profile.json
             ${{ runner.temp }}/gcc/bench/
             ${{ runner.temp }}/gcc/records.jsonl
             ${{ runner.temp }}/rucc/bench/
