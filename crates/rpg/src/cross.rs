@@ -248,7 +248,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let from = dir.join("from.so");
         std::fs::write(&from, b"x").unwrap();
-        let old = SystemTime::now() - std::time::Duration::from_secs(3600);
+        let old = SystemTime::now() - std::time::Duration::from_hours(1);
         std::fs::File::options()
             .write(true)
             .open(&from)
@@ -259,7 +259,7 @@ mod tests {
         place(&from, &to).unwrap();
         let modified = std::fs::metadata(&to).unwrap().modified().unwrap();
         std::fs::remove_dir_all(&dir).ok();
-        assert!(modified > old + std::time::Duration::from_secs(1800));
+        assert!(modified > old + std::time::Duration::from_mins(30));
     }
 
     #[test]
