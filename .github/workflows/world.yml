@@ -3,7 +3,7 @@
 # the PG_TEST_EXTRA the exit criterion names. They take too long for every pull request, so they
 # run each night on the default pin, each Monday on the head of REL_19_STABLE, by hand, and on the
 # pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
-# row alone. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, at -O2 with -flto
+# row alone and `rows: W64` the Windows one. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, at -O2 with -flto
 # under both build systems, and at -O2 with the full configuration under both build systems.
 name: world
 
@@ -21,9 +21,9 @@ on:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
       rows:
-        description: every job, or only the M64 row
+        description: every job, or only the M64 or the W64 row
         type: choice
-        options: [all, M64]
+        options: [all, M64, W64]
         default: all
   pull_request:
     paths:
@@ -56,7 +56,7 @@ jobs:
   # that what AArch64 is missing shows up before that milestone starts.
   world:
     name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -199,7 +199,7 @@ jobs:
   # runs at -O2 under autoconf with Homebrew's libraries.
   world-m64:
     name: world on M64 under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.rows != 'W64'
     runs-on: macos-15
     strategy:
       fail-fast: false
@@ -319,12 +319,144 @@ jobs:
             ${{ runner.temp }}/pg/build/meson-logs/testlog.json
           if-no-files-found: ignore
 
+  # W64, PG6's row: Windows x86-64 in MSYS2's UCRT64 environment under meson only, graded against
+  # MSYS2's gcc. The setup is the windows workflow's: IPC::Run before its Win32 binmode change, Unix
+  # sockets for the TAP tests with their directory under the runner's temp directory, and Windows's
+  # own tar for the tests that unpack a base backup. Like M64 it runs each night and by hand, not on
+  # pull requests.
+  world-w64:
+    name: world on W64 under meson at ${{ matrix.level }}
+    if: github.event_name != 'pull_request' && inputs.rows != 'M64'
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [-O0, -O2]
+    timeout-minutes: 330
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
+      PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
+      PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
+      PGCTLTIMEOUT: 180
+      PG_TEST_USE_UNIX_SOCKETS: 1
+      MSYS: winjitdebug
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: build rpg
+        shell: pwsh
+        run: cargo build --release --workspace
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-perl
+            mingw-w64-ucrt-x86_64-make
+            make
+            bison
+            flex
+            diffutils
+            tar
+            bzip2
+            unzip
+            jq
+            git
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-pc-windows-msvc"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.zip"
+          curl -fsSLO "$base/$name.zip.sha256"
+          sha256sum -c "$name.zip.sha256"
+          unzip -q "$name.zip"
+          cc="$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe") --target=x86_64-windows-gnu"
+          echo "RUCC=$cc --sysroot=$(cygpath -m /ucrt64)" >> "$GITHUB_ENV"
+      - name: install IPC::Run
+        run: |
+          set -euo pipefail
+          lib="$(cygpath -m "$HOME/perl5")"
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
+          echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
+      # MSYS2's curl and tar fill rpg's cache, since the bsdtar in System32 that rpg would find
+      # first is slow on this archive, and rpg fetch checks the hash. A branch pin is cloned by rpg.
+      - name: rpg fetch
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cache="$(cygpath -m "$RUNNER_TEMP/rpg-cache")"
+          echo "RPG_CACHE=$cache" >> "$GITHUB_ENV"
+          export RPG_CACHE="$cache"
+          url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
+          if [ -n "$url" ]; then
+            unix="$(cygpath -u "$RUNNER_TEMP/rpg-cache")"
+            mkdir -p "$unix/archives" "$unix/src/$PIN"
+            curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
+            tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
+          fi
+          ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
+      - name: rpg build
+        timeout-minutes: 90
+        run: |
+          mkdir -p "$RUNNER_TEMP/wintar"
+          cp /c/Windows/System32/tar.exe "$RUNNER_TEMP/wintar/"
+          PATH="$RUNNER_TEMP/wintar:$PATH" \
+          ./target/release/rpg.exe build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system meson \
+            --config minimal --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
+      - name: rpg test --suite world
+        timeout-minutes: 220
+        run: |
+          set -o pipefail
+          export PG_REGRESS_SOCK_DIR="$(cygpath -m "$RUNNER_TEMP")/"
+          ./target/release/rpg.exe test --suite world --row W64 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
+            | tee "$RUNNER_TEMP/world.txt"
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### $PIN world on W64 under meson at ${{ matrix.level }} with the minimal configuration and rucc $RUCC_VERSION"
+            echo
+            jq -r '"build: \(.phase)" + (if .["first-error"] then ", \(.["first-error"])" else "" end)' \
+              "$RUNNER_TEMP/pg/build.json" 2>/dev/null || echo "rpg build did not write build.json"
+            echo
+            grep '^world:' "$RUNNER_TEMP/world.txt" 2>/dev/null || echo "rpg test did not get as far as a count"
+            echo
+            echo "Everything that did not pass:"
+            echo
+            jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
+              "$RUNNER_TEMP/pg/records.jsonl" 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the run
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-world-W64-${{ env.PIN }}-meson${{ matrix.level }}
+          path: |
+            ${{ runner.temp }}/pg/results/
+            ${{ runner.temp }}/pg/records.jsonl
+            ${{ runner.temp }}/pg/build.json
+            ${{ runner.temp }}/pg/test-world-*.log
+            ${{ runner.temp }}/pg/build.log
+            ${{ runner.temp }}/pg/configure.log
+            ${{ runner.temp }}/pg/build/meson-logs/testlog.json
+          if-no-files-found: ignore
+
   # PG3's fourth criterion: every object is the same when compiled twice, and two builds in
   # different directories give the same postgres binary once the debug information, which holds
   # the paths, is stripped.
   reproducible:
     name: reproducible at ${{ matrix.level }}
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -419,7 +551,7 @@ jobs:
   # other way round, on L64 and, for PG8's, on LA64 too.
   cross-modules:
     name: cross-modules on ${{ matrix.row }} at ${{ matrix.level }}
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -552,7 +684,7 @@ jobs:
   # transformation rucc makes in it, which shows every step works on a real tree.
   mixed:
     name: mixed at -O2
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -632,7 +764,7 @@ jobs:
   # hour on L64, which the nightly gives it at -O2. -O0 runs for twenty minutes.
   stress:
     name: stress at ${{ matrix.level }}
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -694,7 +826,7 @@ jobs:
   # way PG1 checked autoconf. Configure alone with each compiler, then compare what they decided.
   probes:
     name: probes on ${{ matrix.row }} under ${{ matrix.system }}
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -769,7 +901,7 @@ jobs:
   # fails only when a build or the measuring does.
   frames:
     name: frames against gcc-14 -O2
-    if: inputs.rows != 'M64'
+    if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
