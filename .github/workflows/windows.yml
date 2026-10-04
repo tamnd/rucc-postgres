@@ -267,15 +267,24 @@ jobs:
           curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
           tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
+      # Meson takes the first tar on PATH, and MSYS2's reads the D: in a Windows path as a remote
+      # host, so the TAP tests that unpack a tar format base backup get Windows's own tar, as upstream's
+      # MinGW task does.
       - name: rpg build
         timeout-minutes: 90
         run: |
+          mkdir -p "$RUNNER_TEMP/wintar"
+          cp /c/Windows/System32/tar.exe "$RUNNER_TEMP/wintar/"
+          PATH="$RUNNER_TEMP/wintar:$PATH" \
           ./target/release/rpg.exe build --pin "$PIN" --cc "$CC_UNDER_TEST" --level -O2 --system meson \
             --config minimal --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
+      # With Unix sockets pg_regress makes its socket directory under /tmp unless told otherwise,
+      # which is not a path a native program can use.
       - name: rpg test --suite world
         timeout-minutes: 180
         run: |
           set -o pipefail
+          export PG_REGRESS_SOCK_DIR="$(cygpath -m "$RUNNER_TEMP")/"
           ./target/release/rpg.exe test --suite world --row W64 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
             | tee "$RUNNER_TEMP/world.txt"
       - name: summary
