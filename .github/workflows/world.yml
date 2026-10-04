@@ -420,6 +420,10 @@ jobs:
           export PG_REGRESS_SOCK_DIR="$(cygpath -m "$RUNNER_TEMP")/"
           ./target/release/rpg.exe test --suite world --row W64 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
             | tee "$RUNNER_TEMP/world.txt"
+      # The minidumps rpg test kept, read by the cdb the runner image has from the Windows SDK.
+      - name: rpg triage
+        if: always()
+        run: ./target/release/rpg.exe triage --out "$(cygpath -m "$RUNNER_TEMP/pg")"
       - name: summary
         if: always()
         run: |
@@ -435,6 +439,8 @@ jobs:
             echo
             jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
               "$RUNNER_TEMP/pg/records.jsonl" 2>/dev/null || true
+            echo
+            sed 's/^# Triage$/#### Triage/; s/^## /##### /' "$RUNNER_TEMP/pg/triage.md" 2>/dev/null | head -200 || true
           } >> "$GITHUB_STEP_SUMMARY"
       - name: keep the run
         if: always()
@@ -443,6 +449,8 @@ jobs:
           name: rpg-world-W64-${{ env.PIN }}-meson${{ matrix.level }}
           path: |
             ${{ runner.temp }}/pg/results/
+            ${{ runner.temp }}/pg/triage.md
+            ${{ runner.temp }}/pg/triage/
             ${{ runner.temp }}/pg/records.jsonl
             ${{ runner.temp }}/pg/build.json
             ${{ runner.temp }}/pg/test-world-*.log
