@@ -168,7 +168,7 @@ fn crashed_in(log: &Path) -> bool {
     })
 }
 
-/// The initdb template meson's setup suite writes, which pg_regress and the TAP scripts copy each
+/// The initdb template meson's setup suite writes, which `pg_regress` and the TAP scripts copy each
 /// cluster from instead of running initdb.
 fn initdb_template(build_dir: &Path) -> PathBuf {
     build_dir.join("tmp_install").join("initdb-template")
