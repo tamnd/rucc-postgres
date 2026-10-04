@@ -33,7 +33,10 @@
 //! it was not read. Postgres writes the dump from inside the dying process and now and then gives
 //! up partway, which the server log calls `could not write crash dump`. `cdb` cannot open what is
 //! left, so that dump is listed as unread with `cdb`'s output beside it, and the crash is still
-//! grouped by its line in the server log.
+//! grouped by its line in the server log. Windows Error Reporting writes a whole one from outside
+//! the process when `LocalDumps` in the registry asks it to, as `postgres.exe.<pid>.dmp` in the
+//! folder named there. Those are read the same way when the folder is under `results/`, and a
+//! crash that left both kinds is counted once, by the one Windows wrote.
 
 use regex::Regex;
 use std::collections::BTreeMap;
@@ -242,10 +245,17 @@ pub fn minidump_signature(program: &str, text: &str) -> String {
     format!("minidump of {program}, {exception} in {stack}")
 }
 
-/// The program a minidump came from. Postgres names its dumps `postgres-pid<pid>-<ticks>.mdmp`.
+/// The program and process a minidump came from. Postgres names its dumps
+/// `postgres-pid<pid>-<ticks>.mdmp`, and Windows Error Reporting names its `postgres.exe.<pid>.dmp`.
 #[must_use]
-pub fn minidump_program(name: &str) -> &str {
-    name.split("-pid").next().unwrap_or(name)
+pub fn minidump_origin(name: &str) -> (&str, &str) {
+    if let Some((program, rest)) = name.split_once("-pid") {
+        return (program, rest.split('-').next().unwrap_or_default());
+    }
+    let mut parts = name.split('.');
+    let program = parts.next().unwrap_or_default();
+    let pid = parts.find(|p| p.bytes().all(|b| b.is_ascii_digit()) && !p.is_empty());
+    (program, pid.unwrap_or_default())
 }
 
 /// What `cdb` runs over a minidump: the exception, the stack of the thread it happened on, and out.
@@ -266,18 +276,46 @@ fn cdb() -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// The minidumps among the files of `results/`. A crash can leave two, one from Postgres and one
+/// from Windows Error Reporting, and then only the one Windows wrote is kept, since it is written
+/// from outside the process and is whole.
+fn minidump_files(all: &[PathBuf]) -> Vec<&PathBuf> {
+    let file_name = |p: &Path| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let has = |p: &Path, ext: &str| p.extension().is_some_and(|e| e == ext);
+    let reported: Vec<(String, String)> = all
+        .iter()
+        .filter(|p| has(p, "dmp"))
+        .map(|p| {
+            let name = file_name(p);
+            let (program, pid) = minidump_origin(&name);
+            (program.to_string(), pid.to_string())
+        })
+        .collect();
+    all.iter()
+        .filter(|p| {
+            if has(p, "dmp") {
+                return true;
+            }
+            let name = file_name(p);
+            let (program, pid) = minidump_origin(&name);
+            has(p, "mdmp") && !reported.iter().any(|(r, id)| r == program && id == pid)
+        })
+        .collect()
+}
+
 /// Add the minidumps among the files of `results/`, read by `cdb` when there is one.
 fn minidumps(triage: &mut Triage, out: &Path, all: &[PathBuf], cdb: Option<&Path>) {
     let traces = out.join("triage");
-    for dump in all
-        .iter()
-        .filter(|p| p.extension().is_some_and(|e| e == "mdmp"))
-    {
+    for dump in minidump_files(all) {
         let name = dump
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let program = minidump_program(&name).to_string();
+        let program = minidump_origin(&name).0.to_string();
         let Some(cdb) = cdb else {
             triage.cores += 1;
             let signature = format!("minidump of {program}, not read because cdb is not installed");
@@ -1006,7 +1044,14 @@ Thread 1 (Thread 0x7f00 (LWP 4251)):
             minidump_signature("postgres", "nothing useful"),
             "minidump of postgres, an unknown exception in no frames"
         );
-        assert_eq!(minidump_program("postgres-pid5120-99.mdmp"), "postgres");
+        assert_eq!(
+            minidump_origin("postgres-pid5120-99.mdmp"),
+            ("postgres", "5120")
+        );
+        assert_eq!(
+            minidump_origin("postgres.exe.1924.dmp"),
+            ("postgres", "1924")
+        );
     }
 
     #[test]
@@ -1027,6 +1072,31 @@ Thread 1 (Thread 0x7f00 (LWP 4251)):
         assert_eq!(
             sorted[0].1[0].file,
             "results/world/run-1/crashdumps/postgres-pid5120-99.mdmp"
+        );
+    }
+
+    #[test]
+    fn a_crash_windows_reported_is_counted_once() {
+        let out = std::env::temp_dir().join(format!("rpg-triage-wer-{}", std::process::id()));
+        let dumps = out.join("results/world/run-1/crashdumps");
+        let reported = out.join("results/windows-error-reporting");
+        std::fs::create_dir_all(&dumps).unwrap();
+        std::fs::create_dir_all(&reported).unwrap();
+        std::fs::write(dumps.join("postgres-pid1924-99.mdmp"), b"MDMP").unwrap();
+        std::fs::write(dumps.join("postgres-pid2048-99.mdmp"), b"MDMP").unwrap();
+        std::fs::write(reported.join("postgres.exe.1924.dmp"), b"MDMP").unwrap();
+        let mut found = Triage::default();
+        minidumps(&mut found, &out, &files(&out.join("results")), None);
+        std::fs::remove_dir_all(&out).ok();
+        assert_eq!(found.cores, 2);
+        let mut kept: Vec<String> = found.sorted()[0].1.iter().map(|f| f.file.clone()).collect();
+        kept.sort();
+        assert_eq!(
+            kept,
+            [
+                "results/windows-error-reporting/postgres.exe.1924.dmp",
+                "results/world/run-1/crashdumps/postgres-pid2048-99.mdmp",
+            ]
         );
     }
 

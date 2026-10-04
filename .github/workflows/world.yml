@@ -413,6 +413,18 @@ jobs:
           PATH="$RUNNER_TEMP/wintar:$PATH" \
           ./target/release/rpg.exe build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system meson \
             --config minimal --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
+      # Windows Error Reporting writes a minidump of any postgres.exe that crashes from outside the
+      # process, whole even when the one Postgres writes of itself is not, into results/ for rpg triage.
+      - name: windows error reporting
+        shell: pwsh
+        run: |
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\postgres.exe"
+          $dir = "$env:RUNNER_TEMP\pg\results\windows-error-reporting"
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dir -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 20 -Force | Out-Null
       - name: rpg test --suite world
         timeout-minutes: 220
         run: |
@@ -420,7 +432,8 @@ jobs:
           export PG_REGRESS_SOCK_DIR="$(cygpath -m "$RUNNER_TEMP")/"
           ./target/release/rpg.exe test --suite world --row W64 --out "$(cygpath -m "$RUNNER_TEMP/pg")" \
             | tee "$RUNNER_TEMP/world.txt"
-      # The minidumps rpg test kept, read by the cdb the runner image has from the Windows SDK.
+      # The minidumps rpg test kept and Windows wrote, read by the cdb the runner image has from the
+      # Windows SDK.
       - name: rpg triage
         if: always()
         run: ./target/release/rpg.exe triage --out "$(cygpath -m "$RUNNER_TEMP/pg")"
