@@ -242,12 +242,14 @@ jobs:
         run: echo "CC_UNDER_TEST=$(cygpath -m "$(command -v gcc)")" >> "$GITHUB_ENV"
       # Meson sets up the TAP tests only when Perl has IPC::Run, which MSYS2 does not package, so it
       # goes into a local lib as on M64. On Windows it needs Win32::Process, which cpanm builds with
-      # make. The path is a Windows one, since this Perl is a native program.
+      # make. The path is a Windows one, since this Perl is a native program. IPC::Run 20260322.0
+      # made binmode the default on Win32, and Postgres's TAP tests count on it turning CRLF into LF,
+      # so it stays at the release before that change.
       - name: install IPC::Run
         run: |
           set -euo pipefail
           lib="$(cygpath -m "$HOME/perl5")"
-          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
           echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
       # rpg runs tar by name, and on Windows that finds the bsdtar in System32 before MSYS2's, which
       # sat on this archive until the step timed out. MSYS2's curl and tar fill rpg's cache instead,
