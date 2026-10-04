@@ -3,17 +3,20 @@
 //! A module and the server that loads it are compiled separately and meet only through the
 //! calling convention and the layout of the structs they share, so this is the real ABI test
 //! between two compilers. Every shared library under `contrib`, `src/pl` and `src/test/modules`
-//! of the modules build, `.so` or on macOS `.dylib`, is copied over the one with the same path in
-//! the server build, which keeps a copy of its own first, and the `contrib` and `modules` suites
-//! run there under autoconf, which installs whatever library is in the build tree without
-//! relinking it, since the copy is newer than the objects. The server build's own libraries are put
-//! back afterwards, whether the suites passed or not. Records carry the suite as `cross-contrib`
-//! and `cross-modules`, so they never read as a run of the server build's own modules.
+//! of the modules build, `.so`, `.dylib` on macOS or `.dll` on Windows, is copied over the one with
+//! the same path in the server build, which keeps a copy of its own first, and given the time of
+//! the copy, so that neither make nor ninja relinks it. Under autoconf the `contrib` and `modules`
+//! suites run there, and make installs whatever library is in the build tree. Under meson the
+//! world suite runs, since meson gives each module a suite of its own, after `tmp_install` is
+//! removed so that the setup suite installs the copies. The server build's own libraries are put
+//! back afterwards, whether the suites passed or not. Records carry the suite as `cross-contrib`,
+//! `cross-modules` or `cross-world`, so they never read as a run of the server build's own modules.
 
 use crate::build::{BuildInfo, Phase};
 use crate::settings::System;
 use crate::suite::{SuitePlan, SuiteRun, run};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// Where the modules live, relative to the build tree.
 const MODULE_DIRS: &[&str] = &["contrib", "src/pl", "src/test/modules"];
@@ -50,7 +53,9 @@ fn collect(dir: &Path, root: &Path, found: &mut Vec<PathBuf>) {
                 continue;
             }
             collect(&path, root, found);
-        } else if path.extension().is_some_and(|e| e == "so" || e == "dylib")
+        } else if path
+            .extension()
+            .is_some_and(|e| e == "so" || e == "dylib" || e == "dll")
             && let Ok(relative) = path.strip_prefix(root)
         {
             found.push(relative.to_path_buf());
@@ -72,10 +77,8 @@ fn check(server: &BuildInfo, modules: &BuildInfo) -> Result<(), String> {
     if server.phase != Phase::Built || modules.phase != Phase::Built {
         return Err("both builds have to have finished".to_string());
     }
-    if System::parse(&server.system)? != System::Autoconf {
-        return Err("rpg cross-modules runs the server build under autoconf only so far".into());
-    }
     for (what, a, b) in [
+        ("build system", &server.system, &modules.system),
         ("pin", &server.pin, &modules.pin),
         ("commit", &server.commit, &modules.commit),
         ("config", &server.config, &modules.config),
@@ -89,18 +92,39 @@ fn check(server: &BuildInfo, modules: &BuildInfo) -> Result<(), String> {
     Ok(())
 }
 
+/// Copy a library and give the copy the time it was made. `std::fs::copy` keeps the time of the
+/// original on Windows, and a library older than its objects would be relinked over the copy.
+fn place(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::copy(from, to)?;
+    std::fs::File::options()
+        .write(true)
+        .open(to)?
+        .set_modified(SystemTime::now())
+}
+
 /// Put the server build's own libraries back.
 fn restore(build_dir: &Path, saved: &Path, swapped: &[PathBuf]) {
     for library in swapped {
-        std::fs::copy(saved.join(library), build_dir.join(library)).ok();
+        place(&saved.join(library), &build_dir.join(library)).ok();
     }
 }
 
-/// Swap the libraries in, run `contrib` and `modules`, and swap them back.
-pub fn cross(plan: &CrossPlan) -> Result<Vec<SuiteRun>, String> {
+/// The suites a cross run is made of. Meson has no suite for all of `contrib` or all of the
+/// modules, so it runs the world suite, which has them all.
+fn suites(system: System) -> &'static [&'static str] {
+    match system {
+        System::Autoconf => &["contrib", "modules"],
+        System::Meson => &["world"],
+    }
+}
+
+/// Swap the libraries in, run the suites, and swap them back. Each run comes with the name its
+/// records carry.
+pub fn cross(plan: &CrossPlan) -> Result<Vec<(String, SuiteRun)>, String> {
     let server = BuildInfo::load(&plan.server)?;
     let modules = BuildInfo::load(&plan.modules)?;
     check(&server, &modules)?;
+    let system = System::parse(&server.system)?;
     let server_dir = PathBuf::from(&server.build_dir);
     let modules_dir = PathBuf::from(&modules.build_dir);
     let swapped = shared(&libraries(&server_dir), &libraries(&modules_dir));
@@ -126,13 +150,20 @@ pub fn cross(plan: &CrossPlan) -> Result<Vec<SuiteRun>, String> {
     let mut runs = Vec::new();
     let mut failure = None;
     for library in &swapped {
-        if let Err(e) = std::fs::copy(modules_dir.join(library), server_dir.join(library)) {
+        if let Err(e) = place(&modules_dir.join(library), &server_dir.join(library)) {
             failure = Some(format!("copying {}: {e}", library.display()));
             break;
         }
     }
+    // meson installs only what is newer than the installed copy, so the install it made before
+    // would keep the server build's own libraries, and the one made here would keep the others.
+    let installed = server_dir.join("tmp_install");
+    if system == System::Meson {
+        std::fs::remove_dir_all(&installed).ok();
+    }
     if failure.is_none() {
-        for suite in ["contrib", "modules"] {
+        for suite in suites(system) {
+            let label = format!("cross-{suite}");
             let suite_plan = SuitePlan {
                 out: plan.server.clone(),
                 info: server.clone(),
@@ -141,10 +172,10 @@ pub fn cross(plan: &CrossPlan) -> Result<Vec<SuiteRun>, String> {
                 timeout: plan.timeout,
                 baseline: None,
                 run: 1,
-                label: Some(format!("cross-{suite}")),
+                label: Some(label.clone()),
             };
             match run(&suite_plan) {
-                Ok(done) => runs.push(done),
+                Ok(done) => runs.push((label, done)),
                 Err(e) => {
                     failure = Some(e);
                     break;
@@ -153,6 +184,9 @@ pub fn cross(plan: &CrossPlan) -> Result<Vec<SuiteRun>, String> {
         }
     }
     restore(&server_dir, &saved, &swapped);
+    if system == System::Meson {
+        std::fs::remove_dir_all(&installed).ok();
+    }
     match failure {
         Some(e) => Err(e),
         None => Ok(runs),
@@ -177,6 +211,55 @@ mod tests {
             shared(&server, &modules),
             [PathBuf::from("contrib/amcheck/amcheck.so")]
         );
+    }
+
+    #[test]
+    fn meson_runs_the_world_suite_and_autoconf_the_two_module_suites() {
+        assert_eq!(suites(System::Autoconf), ["contrib", "modules"]);
+        assert_eq!(suites(System::Meson), ["world"]);
+    }
+
+    #[test]
+    fn libraries_on_windows_end_in_dll_and_are_found_too() {
+        let root = std::env::temp_dir().join(format!("rpg-cross-dll-{}", std::process::id()));
+        for file in [
+            "contrib/amcheck/amcheck.dll",
+            "contrib/amcheck/libamcheck.a",
+            "src/test/modules/test_ddl/test_ddl.dll",
+        ] {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"").unwrap();
+        }
+        let found = libraries(&root);
+        std::fs::remove_dir_all(&root).ok();
+        assert_eq!(
+            found,
+            [
+                PathBuf::from("contrib/amcheck/amcheck.dll"),
+                PathBuf::from("src/test/modules/test_ddl/test_ddl.dll"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_placed_copy_is_newer_than_its_original() {
+        let dir = std::env::temp_dir().join(format!("rpg-cross-place-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let from = dir.join("from.so");
+        std::fs::write(&from, b"x").unwrap();
+        let old = SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&from)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let to = dir.join("to.so");
+        place(&from, &to).unwrap();
+        let modified = std::fs::metadata(&to).unwrap().modified().unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(modified > old + std::time::Duration::from_secs(1800));
     }
 
     #[test]

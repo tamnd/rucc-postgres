@@ -10,7 +10,11 @@
 #
 # The last job is the W64 row as the harness sees it: rpg builds the same tree with rucc through
 # its shim, TAP tests included, and runs every suite under meson, so the row gets compile records
-# and test records like the other three.
+# and test records like the other three. Its gcc leg runs on the same runner, so a failure that is
+# the machine's shows up in both.
+#
+# The cross job builds the tree once with rucc and once with gcc and loads each build's modules
+# into the other's server, which is the ABI test between the two compilers on Windows.
 #
 # It runs each Sunday, by hand, and on pull requests that change this file or how rpg starts a
 # compiler.
@@ -32,6 +36,7 @@ on:
       - .github/workflows/windows.yml
       - crates/rpg/src/build.rs
       - crates/rpg/src/compiler.rs
+      - crates/rpg/src/cross.rs
       - crates/rpg/src/process.rs
       - crates/rpg/src/regress.rs
       - crates/rpg-shim/src/**
@@ -313,4 +318,136 @@ jobs:
             ${{ runner.temp }}/pg/test-world-*.log
             ${{ runner.temp }}/pg/build/meson-logs/
             ${{ runner.temp }}/pg/results/
+          if-no-files-found: ignore
+
+  cross:
+    name: rpg cross-modules on W64 between rucc and gcc
+    runs-on: windows-2022
+    timeout-minutes: 300
+    env:
+      RUCC_VERSION: ${{ inputs.rucc || '0.19.0' }}
+      PIN: ${{ inputs.pin || 'REL_18_6' }}
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      PG_TEST_USE_UNIX_SOCKETS: 1
+      MSYS: winjitdebug
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: Swatinem/rust-cache@v2.9.2
+      - name: build rpg
+        shell: pwsh
+        run: cargo build --release --workspace
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-perl
+            mingw-w64-ucrt-x86_64-make
+            make
+            bison
+            flex
+            diffutils
+            tar
+            bzip2
+            unzip
+            jq
+      - name: install rucc
+        run: |
+          set -euo pipefail
+          name="rucc-v$RUCC_VERSION-x86_64-pc-windows-msvc"
+          cd "$RUNNER_TEMP"
+          base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
+          curl -fsSLO "$base/$name.zip"
+          curl -fsSLO "$base/$name.zip.sha256"
+          sha256sum -c "$name.zip.sha256"
+          unzip -q "$name.zip"
+          cc="$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe") --target=x86_64-windows-gnu"
+          cc="$cc --sysroot=$(cygpath -m /ucrt64)"
+          echo "RUCC_CC=$cc" >> "$GITHUB_ENV"
+          echo "GCC_CC=$(cygpath -m "$(command -v gcc)")" >> "$GITHUB_ENV"
+      - name: install IPC::Run
+        run: |
+          set -euo pipefail
+          lib="$(cygpath -m "$HOME/perl5")"
+          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
+          echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
+      - name: rpg fetch
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cache="$(cygpath -m "$RUNNER_TEMP/rpg-cache")"
+          echo "RPG_CACHE=$cache" >> "$GITHUB_ENV"
+          export RPG_CACHE="$cache"
+          url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
+          unix="$(cygpath -u "$RUNNER_TEMP/rpg-cache")"
+          mkdir -p "$unix/archives" "$unix/src/$PIN"
+          curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
+          tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
+          ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
+      - name: rpg build with both
+        timeout-minutes: 120
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/wintar"
+          cp /c/Windows/System32/tar.exe "$RUNNER_TEMP/wintar/"
+          export PATH="$RUNNER_TEMP/wintar:$PATH"
+          for cc in rucc gcc; do
+            var="${cc^^}_CC"
+            ./target/release/rpg.exe build --pin "$PIN" --cc "${!var}" --level -O2 --system meson \
+              --config minimal --out "$(cygpath -m "$RUNNER_TEMP/$cc")" --jobs "$(nproc)"
+          done
+      # Each way round runs the world suite in one build's server with the other's modules.
+      - name: rpg cross-modules
+        timeout-minutes: 150
+        run: |
+          set -uo pipefail
+          export PG_REGRESS_SOCK_DIR="$(cygpath -m "$RUNNER_TEMP")/"
+          status=0
+          for way in "rucc gcc" "gcc rucc"; do
+            set -- $way
+            ./target/release/rpg.exe cross-modules --server "$(cygpath -m "$RUNNER_TEMP/$1")" \
+              --modules "$(cygpath -m "$RUNNER_TEMP/$2")" | tee "$RUNNER_TEMP/cross-$1.txt" || status=1
+          done
+          exit $status
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### $PIN cross-modules on W64 under meson at -O2 through rpg"
+            for way in "rucc gcc" "gcc rucc"; do
+              set -- $way
+              echo
+              echo "$2 modules in the $1 server:"
+              echo
+              grep '^cross-world:' "$RUNNER_TEMP/cross-$1.txt" || echo "rpg did not get as far as a count"
+              echo
+              jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
+                "$RUNNER_TEMP/$1/records.jsonl" 2>/dev/null || true
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the run
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-w64-cross-${{ env.PIN }}-meson-O2
+          path: |
+            ${{ runner.temp }}/rucc/build.json
+            ${{ runner.temp }}/rucc/records.jsonl
+            ${{ runner.temp }}/rucc/build.log
+            ${{ runner.temp }}/rucc/test-cross-world-*.log
+            ${{ runner.temp }}/rucc/results/
+            ${{ runner.temp }}/gcc/build.json
+            ${{ runner.temp }}/gcc/records.jsonl
+            ${{ runner.temp }}/gcc/build.log
+            ${{ runner.temp }}/gcc/test-cross-world-*.log
+            ${{ runner.temp }}/gcc/results/
           if-no-files-found: ignore
