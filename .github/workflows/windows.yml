@@ -175,7 +175,6 @@ jobs:
   rpg:
     name: rpg build and the world suite on W64 with ${{ matrix.cc }}
     runs-on: windows-2022
-    continue-on-error: true
     timeout-minutes: 300
     # gcc runs the same suite on the same runner, so a failure that is the machine's and not rucc's
     # shows up in both.
