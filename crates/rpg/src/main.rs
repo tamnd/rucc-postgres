@@ -330,7 +330,7 @@ fn cross_command(args: &Args) -> Result<ExitCode, String> {
         .get("records")
         .map_or_else(|| server.join("records.jsonl"), PathBuf::from);
     let mut failed = false;
-    for (run, suite) in runs.iter().zip(["cross-contrib", "cross-modules"]) {
+    for (suite, run) in &runs {
         records::append(&path, &run.records)?;
         print_run(run, suite);
         failed |= run.records.iter().any(|r| {
