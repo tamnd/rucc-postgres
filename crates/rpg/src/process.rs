@@ -201,6 +201,21 @@ pub fn capture(program: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// Run a program and return everything it printed, whatever its exit status.
+///
+/// For cdb, which exits with a failure after `q` on a dump it read without trouble, so only what it
+/// printed says whether it answered.
+pub fn capture_all(program: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("could not run {}: {e}", program.display()))?;
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(text)
+}
+
 /// `std::fs::canonicalize`, without the `\\?\` it puts in front of a path on a Windows drive.
 ///
 /// ninja runs in the build directory, and windres starts the preprocessor through cmd.exe, which

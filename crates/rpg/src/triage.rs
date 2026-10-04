@@ -25,6 +25,18 @@
 //! the build directory or one of the names Postgres installs, are read, the faulting thread's
 //! frames are written next to the report, and the crash is grouped by its signal and the top three
 //! of those frames, the same way a core is.
+//!
+//! Windows has neither, and Postgres writes a minidump of its own instead, which `rpg test` moves
+//! into the run's `crashdumps/`. Each one is given to `cdb` when it is installed, and grouped by
+//! the exception and the top three frames of the thread it happened on, which `cdb` names from
+//! what `postgres.exe` exports. Without `cdb` a minidump is still counted, under a group that says
+//! it was not read. Postgres writes the dump from inside the dying process and now and then gives
+//! up partway, which the server log calls `could not write crash dump`. `cdb` cannot open what is
+//! left, so that dump is listed as unread with `cdb`'s output beside it, and the crash is still
+//! grouped by its line in the server log. Windows Error Reporting writes a whole one from outside
+//! the process when `LocalDumps` in the registry asks it to, as `postgres.exe.<pid>.dmp` in the
+//! folder named there. Those are read the same way when the folder is under `results/`, and a
+//! crash that left both kinds is counted once, by the one Windows wrote.
 
 use regex::Regex;
 use std::collections::BTreeMap;
@@ -49,7 +61,7 @@ pub struct Triage {
     pub groups: BTreeMap<String, Vec<Failure>>,
     /// Core files that could not be read, with the reason.
     pub unread: Vec<(String, String)>,
-    /// How many core files and crash reports were read.
+    /// How many core files, crash reports and minidumps were counted.
     pub cores: usize,
     /// Cores from `SIGQUIT`, by file name, which are not failures.
     pub quit: Vec<String>,
@@ -88,6 +100,10 @@ static SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("a va
 static FRAME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^#\d+\s+(?:0x[0-9a-fA-F]+ in )?([^\s(]+) \(").expect("a valid regex")
 });
+static EXCEPTION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"Last event: .*code ([0-9a-fA-F]{8})").expect("a valid regex"));
+static CDB_FRAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:[0-9a-f]{2,} )?(\S+)$").expect("a valid regex"));
 static SIGNAL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"Program terminated with signal (\w+)").expect("a valid regex"));
 
@@ -106,12 +122,16 @@ pub fn normalize(line: &str) -> String {
 }
 
 /// The first crash a server log or a TAP log records: a failed assertion's `TRAP:` line, or else
-/// the line saying a process died of a signal.
+/// the line saying a process died of a signal, or of an exception on Windows.
 #[must_use]
 pub fn crash_line(log: &str) -> Option<String> {
     log.lines()
         .find(|l| l.contains("TRAP:"))
-        .or_else(|| log.lines().find(|l| l.contains("terminated by signal")))
+        .or_else(|| {
+            log.lines().find(|l| {
+                l.contains("terminated by signal") || l.contains("terminated by exception")
+            })
+        })
         .map(|l| format!("crash: {}", normalize(l)))
 }
 
@@ -195,6 +215,139 @@ pub fn core_signature(program: &str, backtrace: &str) -> String {
         frames.join(" < ")
     };
     format!("core of {program}, {signal} in {stack}")
+}
+
+/// The signature of a minidump from what `cdb` printed over it: the exception and the first three
+/// frames of `kc`, which follow its `Call Site` header one to a line until `quit:`, with the offsets
+/// into each function left off so that two builds of the same code agree. `kc` numbers its frames
+/// when `.kframes` or `kn` asks it to, so a leading frame number is allowed and dropped.
+#[must_use]
+pub fn minidump_signature(program: &str, text: &str) -> String {
+    let exception = EXCEPTION.captures(text).and_then(|c| c.get(1)).map_or_else(
+        || "an unknown exception".to_string(),
+        |m| format!("exception 0x{}", m.as_str().to_ascii_lowercase()),
+    );
+    let frames: Vec<&str> = text
+        .lines()
+        .skip_while(|l| !l.contains("Call Site"))
+        .skip(1)
+        .map(str::trim)
+        .take_while(|l| !l.is_empty() && *l != "quit:")
+        .filter_map(|l| CDB_FRAME.captures(l).and_then(|c| c.get(1)))
+        .map(|m| m.as_str().split('+').next().unwrap_or_default())
+        .take(3)
+        .collect();
+    let stack = if frames.is_empty() {
+        "no frames".to_string()
+    } else {
+        frames.join(" < ")
+    };
+    format!("minidump of {program}, {exception} in {stack}")
+}
+
+/// The program and process a minidump came from. Postgres names its dumps
+/// `postgres-pid<pid>-<ticks>.mdmp`, and Windows Error Reporting names its `postgres.exe.<pid>.dmp`.
+#[must_use]
+pub fn minidump_origin(name: &str) -> (&str, &str) {
+    if let Some((program, rest)) = name.split_once("-pid") {
+        return (program, rest.split('-').next().unwrap_or_default());
+    }
+    let mut parts = name.split('.');
+    let program = parts.next().unwrap_or_default();
+    let pid = parts.find(|p| p.bytes().all(|b| b.is_ascii_digit()) && !p.is_empty());
+    (program, pid.unwrap_or_default())
+}
+
+/// What `cdb` runs over a minidump: the exception, the stack of the thread it happened on, and out.
+const CDB_COMMANDS: &str = ".lastevent; .ecxr; kc 30; q";
+
+/// `cdb` when it is installed, on the path or where the Windows SDK puts it, which is where
+/// GitHub's Windows images have it.
+fn cdb() -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("cdb.exe"))
+        .chain(std::iter::once(PathBuf::from(
+            r"C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe",
+        )))
+        .find(|p| p.is_file())
+}
+
+/// The minidumps among the files of `results/`. A crash can leave two, one from Postgres and one
+/// from Windows Error Reporting, and then only the one Windows wrote is kept, since it is written
+/// from outside the process and is whole.
+fn minidump_files(all: &[PathBuf]) -> Vec<&PathBuf> {
+    let file_name = |p: &Path| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    let has = |p: &Path, ext: &str| p.extension().is_some_and(|e| e == ext);
+    let reported: Vec<(String, String)> = all
+        .iter()
+        .filter(|p| has(p, "dmp"))
+        .map(|p| {
+            let name = file_name(p);
+            let (program, pid) = minidump_origin(&name);
+            (program.to_string(), pid.to_string())
+        })
+        .collect();
+    all.iter()
+        .filter(|p| {
+            if has(p, "dmp") {
+                return true;
+            }
+            let name = file_name(p);
+            let (program, pid) = minidump_origin(&name);
+            has(p, "mdmp") && !reported.iter().any(|(r, id)| r == program && id == pid)
+        })
+        .collect()
+}
+
+/// Add the minidumps among the files of `results/`, read by `cdb` when there is one.
+fn minidumps(triage: &mut Triage, out: &Path, all: &[PathBuf], cdb: Option<&Path>) {
+    let traces = out.join("triage");
+    for dump in minidump_files(all) {
+        let name = dump
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let program = minidump_origin(&name).0.to_string();
+        let Some(cdb) = cdb else {
+            triage.cores += 1;
+            let signature = format!("minidump of {program}, not read because cdb is not installed");
+            triage.add(signature, name, relative_to(out, dump));
+            continue;
+        };
+        let path = dump.display().to_string();
+        let text = match crate::process::capture_all(cdb, &["-z", &path, "-c", CDB_COMMANDS]) {
+            Ok(text) => text,
+            Err(e) => {
+                triage.unread.push((name, e));
+                continue;
+            }
+        };
+        std::fs::create_dir_all(&traces).ok();
+        let trace = traces.join(format!("{name}.txt"));
+        std::fs::write(&trace, &text).ok();
+        if EXCEPTION.is_match(&text) {
+            triage.cores += 1;
+            triage.add(
+                minidump_signature(&program, &text),
+                name,
+                relative_to(out, &trace),
+            );
+        } else {
+            let said = format!(
+                "cdb did not name the exception, see {}",
+                relative_to(out, &trace)
+            );
+            triage.unread.push((name, said));
+        }
+    }
 }
 
 /// Whether a core came from `SIGQUIT`, which Postgres sends on purpose.
@@ -438,9 +591,9 @@ fn not_tap(name: &str) -> bool {
         || name.ends_with(".postmaster.log")
 }
 
-/// Group the failures a build directory's `results/` holds, the cores in `cores` and the crash
-/// reports in `reports`, writing each core's backtrace and each report's frames into
-/// `<out>/triage/`.
+/// Group the failures a build directory's `results/` holds, the cores in `cores`, the crash
+/// reports in `reports` and the minidumps under `results/`, writing each core's backtrace, each
+/// report's frames and what `cdb` says of each minidump into `<out>/triage/`.
 pub fn triage(out: &Path, cores: &Path, reports: Option<&Reports>) -> Triage {
     let mut triage = Triage::default();
     let relative = |p: &Path| p.strip_prefix(out).unwrap_or(p).display().to_string();
@@ -538,6 +691,7 @@ pub fn triage(out: &Path, cores: &Path, reports: Option<&Reports>) -> Triage {
     if let Some(reports) = reports {
         crash_reports(&mut triage, out, reports);
     }
+    minidumps(&mut triage, out, &all, cdb().as_deref());
     triage
 }
 
@@ -607,7 +761,7 @@ pub fn report(triage: &Triage) -> String {
     let groups = triage.sorted();
     let _ = writeln!(
         text,
-        "{} failures in {} groups, {} of them core files or crash reports.",
+        "{} failures in {} groups, {} of them core files, crash reports or minidumps.",
         triage.failures(),
         groups.len(),
         triage.cores,
@@ -631,7 +785,7 @@ pub fn report(triage: &Triage) -> String {
         }
     }
     if !triage.unread.is_empty() {
-        text.push_str("\n## Cores and crash reports that could not be read\n\n");
+        text.push_str("\n## Cores, crash reports and minidumps that could not be read\n\n");
         for (name, why) in &triage.unread {
             let _ = writeln!(text, "- {name}: {why}");
         }
@@ -843,6 +997,107 @@ Thread 1 (Thread 0x7f00 (LWP 4251)):
             "triage/postgres-2026-09-30-101112.ips.txt"
         );
         assert_eq!(none.cores, 0);
+    }
+
+    #[test]
+    fn an_exception_is_how_a_windows_server_log_says_it_crashed() {
+        assert_eq!(
+            crash_line("LOG:  server process (PID 5120) was terminated by exception 0xC0000005\n"),
+            Some("crash: LOG: server process (PID N) was terminated by exception <addr>".into())
+        );
+    }
+
+    #[test]
+    fn a_minidump_is_the_exception_and_the_top_of_its_stack() {
+        // What cdb printed over a backend that crashed in a module's _PG_init on the W64 runner.
+        let text = "Loading Dump File [D:\\a\\_temp\\pg\\crashdumps\\postgres-pid1512-1349359.mdmp]\n\
+                    0:000> cdb: Reading initial command '.lastevent; .ecxr; kc 30; q'\n\
+                    Last event: 5e8.acc: Access violation - code c0000005 (first/second chance not available)\n\
+                    \x20 debugger time: Sun Oct  4 07:14:33.588 2026 (UTC + 0:00)\n\
+                    rax=0000000000000000 rbx=00007ff7ac39ca90 rcx=0000000a3e7ff450\n\
+                    crashme!PG_init+0xe7:\n\
+                    00007ffc`5f461524 c70000000000    mov     dword ptr [rax],0 ds:00000000`00000000=????????\n\
+                    Call Site\n\
+                    crashme!PG_init\n\
+                    postgres!lookup_external_function\n\
+                    postgres!load_file\n\
+                    postgres!ValidatePgVersion\n\
+                    postgres\n\
+                    kernel32!BaseThreadInitThunk\n\
+                    ntdll!RtlUserThreadStart\n\
+                    quit:\n\
+                    NatVis script unloaded from 'C:\\Debuggers\\x64\\Visualizers\\winrt.natvis'\n";
+        assert_eq!(
+            minidump_signature("postgres", text),
+            "minidump of postgres, exception 0xc0000005 in crashme!PG_init < postgres!lookup_external_function < postgres!load_file"
+        );
+        let numbered = "Last event: 1400.1a2c: Access violation - code c0000005 (first/second chance not available)\n\
+                        \x20# Call Site\n\
+                        00 postgres!ExecInterpExpr+0x1a3\n\
+                        01 postgres!ExecScan+0x88\n\
+                        quit:\n";
+        assert_eq!(
+            minidump_signature("postgres", numbered),
+            "minidump of postgres, exception 0xc0000005 in postgres!ExecInterpExpr < postgres!ExecScan"
+        );
+        assert_eq!(
+            minidump_signature("postgres", "nothing useful"),
+            "minidump of postgres, an unknown exception in no frames"
+        );
+        assert_eq!(
+            minidump_origin("postgres-pid5120-99.mdmp"),
+            ("postgres", "5120")
+        );
+        assert_eq!(
+            minidump_origin("postgres.exe.1924.dmp"),
+            ("postgres", "1924")
+        );
+    }
+
+    #[test]
+    fn a_minidump_without_cdb_is_still_counted() {
+        let out = std::env::temp_dir().join(format!("rpg-triage-mdmp-{}", std::process::id()));
+        let dumps = out.join("results/world/run-1/crashdumps");
+        std::fs::create_dir_all(&dumps).unwrap();
+        std::fs::write(dumps.join("postgres-pid5120-99.mdmp"), b"MDMP").unwrap();
+        let mut found = Triage::default();
+        minidumps(&mut found, &out, &files(&out.join("results")), None);
+        std::fs::remove_dir_all(&out).ok();
+        assert_eq!(found.cores, 1);
+        let sorted = found.sorted();
+        assert_eq!(
+            sorted[0].0,
+            "minidump of postgres, not read because cdb is not installed"
+        );
+        assert_eq!(
+            sorted[0].1[0].file,
+            "results/world/run-1/crashdumps/postgres-pid5120-99.mdmp"
+        );
+    }
+
+    #[test]
+    fn a_crash_windows_reported_is_counted_once() {
+        let out = std::env::temp_dir().join(format!("rpg-triage-wer-{}", std::process::id()));
+        let dumps = out.join("results/world/run-1/crashdumps");
+        let reported = out.join("results/windows-error-reporting");
+        std::fs::create_dir_all(&dumps).unwrap();
+        std::fs::create_dir_all(&reported).unwrap();
+        std::fs::write(dumps.join("postgres-pid1924-99.mdmp"), b"MDMP").unwrap();
+        std::fs::write(dumps.join("postgres-pid2048-99.mdmp"), b"MDMP").unwrap();
+        std::fs::write(reported.join("postgres.exe.1924.dmp"), b"MDMP").unwrap();
+        let mut found = Triage::default();
+        minidumps(&mut found, &out, &files(&out.join("results")), None);
+        std::fs::remove_dir_all(&out).ok();
+        assert_eq!(found.cores, 2);
+        let mut kept: Vec<String> = found.sorted()[0].1.iter().map(|f| f.file.clone()).collect();
+        kept.sort();
+        assert_eq!(
+            kept,
+            [
+                "results/windows-error-reporting/postgres.exe.1924.dmp",
+                "results/world/run-1/crashdumps/postgres-pid2048-99.mdmp",
+            ]
+        );
     }
 
     #[test]

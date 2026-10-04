@@ -10,6 +10,11 @@
 //! lines together in the log. The per test results come from `pg_regress`'s
 //! own output, and the logs and diffs of every run are copied out of the build tree into
 //! `results/<suite>/run-<n>/`, because the next run overwrites them.
+//!
+//! On Windows a crash leaves a minidump rather than a core. Postgres writes one itself when its
+//! data directory has a `crashdumps` directory in it, so under meson that directory goes into the
+//! initdb template every test cluster is copied from, and the dumps written during the run are
+//! moved into `results/<suite>/run-<n>/crashdumps/` afterwards for `rpg triage` to read.
 
 use crate::build::{BuildInfo, Phase, environment, round};
 use crate::process::Step;
@@ -156,9 +161,66 @@ pub(crate) fn refuse_root() -> Result<(), String> {
     Ok(())
 }
 
-/// Whether a server log says a backend died of a signal.
+/// Whether a server log says a backend died of a signal, or of an exception on Windows.
 fn crashed_in(log: &Path) -> bool {
-    std::fs::read_to_string(log).is_ok_and(|text| text.contains("terminated by signal"))
+    std::fs::read_to_string(log).is_ok_and(|text| {
+        text.contains("terminated by signal") || text.contains("terminated by exception")
+    })
+}
+
+/// The initdb template meson's setup suite writes, which `pg_regress` and the TAP scripts copy each
+/// cluster from instead of running initdb.
+fn initdb_template(build_dir: &Path) -> PathBuf {
+    build_dir.join("tmp_install").join("initdb-template")
+}
+
+/// Every minidump under a directory: the files in a `crashdumps` directory that end in `.mdmp`.
+fn minidumps(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                stack.push(path);
+            } else if path.extension().is_some_and(|e| e == "mdmp")
+                && path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|n| n == "crashdumps")
+            {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Move the minidumps the run left in the build tree into the run's artifacts, so that the next
+/// run does not find them again. A dump is named for its PID and the tick count, which do not
+/// repeat within a run. A copy stands in for the move when the two are on different drives.
+fn keep_minidumps(build_dir: &Path, artifacts: &Path) {
+    let dumps = minidumps(build_dir);
+    if dumps.is_empty() {
+        return;
+    }
+    let kept = artifacts.join("crashdumps");
+    if std::fs::create_dir_all(&kept).is_err() {
+        return;
+    }
+    for dump in dumps {
+        let Some(name) = dump.file_name() else {
+            continue;
+        };
+        let to = kept.join(name);
+        if std::fs::rename(&dump, &to).is_err() && std::fs::copy(&dump, &to).is_ok() {
+            std::fs::remove_file(&dump).ok();
+        }
+    }
 }
 
 /// Run the suite.
@@ -225,6 +287,11 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
             if !done.ok {
                 return Err("meson test --suite setup failed, so the suite cannot run".into());
             }
+            // Copied into every cluster made from the template, which is what has Postgres write a
+            // minidump when one of its processes crashes there.
+            if cfg!(windows) {
+                std::fs::create_dir_all(initdb_template(&build_dir).join("crashdumps")).ok();
+            }
             // world is every suite but setup, run as upstream's CI runs it, a process per core.
             let jobs = plan.info.jobs.max(1).to_string();
             let args = if plan.suite == "world" {
@@ -288,6 +355,9 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
 
     std::fs::create_dir_all(&artifacts)
         .map_err(|e| format!("creating {}: {e}", artifacts.display()))?;
+    if cfg!(windows) {
+        keep_minidumps(&build_dir, &artifacts);
+    }
     let (output, crashed) = if system == System::Meson && plan.suite == "world" {
         (
             meson_world(&meson_tests, &build_dir, &artifacts),
@@ -555,6 +625,47 @@ mod tests {
             "contrib/amcheck/output_iso"
         );
         assert_eq!(section_dir("contrib/amcheck", "regress"), "contrib/amcheck");
+    }
+
+    #[test]
+    fn minidumps_move_out_of_the_build_tree_into_the_run() {
+        let root = std::env::temp_dir().join(format!("rpg-minidumps-{}", std::process::id()));
+        let build = root.join("build");
+        let data = build.join("testrun/recovery/001_stream_rep/data/t_primary_data/pgdata");
+        std::fs::create_dir_all(data.join("crashdumps")).unwrap();
+        std::fs::write(data.join("crashdumps/postgres-pid4242-99.mdmp"), b"MDMP").unwrap();
+        // A dump outside a crashdumps directory is something else's, and stays where it is.
+        std::fs::write(data.join("other.mdmp"), b"MDMP").unwrap();
+        std::fs::create_dir_all(initdb_template(&build).join("crashdumps")).unwrap();
+
+        let found = minidumps(&build);
+        assert_eq!(found, [data.join("crashdumps/postgres-pid4242-99.mdmp")]);
+        let artifacts = root.join("results/world/run-1");
+        keep_minidumps(&build, &artifacts);
+        assert!(
+            artifacts
+                .join("crashdumps/postgres-pid4242-99.mdmp")
+                .is_file()
+        );
+        assert!(minidumps(&build).is_empty());
+        assert!(data.join("other.mdmp").is_file());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_crash_on_windows_is_an_exception_in_the_server_log() {
+        let root = std::env::temp_dir().join(format!("rpg-crashed-in-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let log = root.join("postmaster.log");
+        std::fs::write(
+            &log,
+            "LOG:  server process (PID 5120) was terminated by exception 0xC0000005\n",
+        )
+        .unwrap();
+        assert!(crashed_in(&log));
+        std::fs::write(&log, "LOG:  database system is shut down\n").unwrap();
+        assert!(!crashed_in(&log));
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
