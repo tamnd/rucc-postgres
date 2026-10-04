@@ -279,19 +279,29 @@ fn minidumps(triage: &mut Triage, out: &Path, all: &[PathBuf], cdb: Option<&Path
             continue;
         };
         let path = dump.display().to_string();
-        match crate::process::capture(cdb, &["-z", &path, "-c", CDB_COMMANDS]) {
-            Ok(text) => {
-                std::fs::create_dir_all(&traces).ok();
-                let trace = traces.join(format!("{name}.txt"));
-                std::fs::write(&trace, &text).ok();
-                triage.cores += 1;
-                triage.add(
-                    minidump_signature(&program, &text),
-                    name,
-                    relative_to(out, &trace),
-                );
+        let text = match crate::process::capture_all(cdb, &["-z", &path, "-c", CDB_COMMANDS]) {
+            Ok(text) => text,
+            Err(e) => {
+                triage.unread.push((name, e));
+                continue;
             }
-            Err(e) => triage.unread.push((name, e)),
+        };
+        std::fs::create_dir_all(&traces).ok();
+        let trace = traces.join(format!("{name}.txt"));
+        std::fs::write(&trace, &text).ok();
+        if EXCEPTION.is_match(&text) {
+            triage.cores += 1;
+            triage.add(
+                minidump_signature(&program, &text),
+                name,
+                relative_to(out, &trace),
+            );
+        } else {
+            let said = format!(
+                "cdb did not name the exception, see {}",
+                relative_to(out, &trace)
+            );
+            triage.unread.push((name, said));
         }
     }
 }
