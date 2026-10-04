@@ -30,7 +30,10 @@
 //! into the run's `crashdumps/`. Each one is given to `cdb` when it is installed, and grouped by
 //! the exception and the top three frames of the thread it happened on, which `cdb` names from
 //! what `postgres.exe` exports. Without `cdb` a minidump is still counted, under a group that says
-//! it was not read.
+//! it was not read. Postgres writes the dump from inside the dying process and now and then gives
+//! up partway, which the server log calls `could not write crash dump`. `cdb` cannot open what is
+//! left, so that dump is listed as unread with `cdb`'s output beside it, and the crash is still
+//! grouped by its line in the server log.
 
 use regex::Regex;
 use std::collections::BTreeMap;
@@ -97,7 +100,7 @@ static FRAME: LazyLock<Regex> = LazyLock::new(|| {
 static EXCEPTION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"Last event: .*code ([0-9a-fA-F]{8})").expect("a valid regex"));
 static CDB_FRAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[0-9a-f]{2,} (\S+)$").expect("a valid regex"));
+    LazyLock::new(|| Regex::new(r"^(?:[0-9a-f]{2,} )?(\S+)$").expect("a valid regex"));
 static SIGNAL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"Program terminated with signal (\w+)").expect("a valid regex"));
 
@@ -212,8 +215,9 @@ pub fn core_signature(program: &str, backtrace: &str) -> String {
 }
 
 /// The signature of a minidump from what `cdb` printed over it: the exception and the first three
-/// frames of `kc`, which follow its `Call Site` header, with the offsets into each function left
-/// off so that two builds of the same code agree.
+/// frames of `kc`, which follow its `Call Site` header one to a line until `quit:`, with the offsets
+/// into each function left off so that two builds of the same code agree. `kc` numbers its frames
+/// when `.kframes` or `kn` asks it to, so a leading frame number is allowed and dropped.
 #[must_use]
 pub fn minidump_signature(program: &str, text: &str) -> String {
     let exception = EXCEPTION.captures(text).and_then(|c| c.get(1)).map_or_else(
@@ -224,7 +228,9 @@ pub fn minidump_signature(program: &str, text: &str) -> String {
         .lines()
         .skip_while(|l| !l.contains("Call Site"))
         .skip(1)
-        .filter_map(|l| CDB_FRAME.captures(l.trim()).and_then(|c| c.get(1)))
+        .map(str::trim)
+        .take_while(|l| !l.is_empty() && *l != "quit:")
+        .filter_map(|l| CDB_FRAME.captures(l).and_then(|c| c.get(1)))
         .map(|m| m.as_str().split('+').next().unwrap_or_default())
         .take(3)
         .collect();
@@ -965,21 +971,36 @@ Thread 1 (Thread 0x7f00 (LWP 4251)):
 
     #[test]
     fn a_minidump_is_the_exception_and_the_top_of_its_stack() {
-        let text = "Loading Dump File [C:\\pg\\crashdumps\\postgres-pid5120-99.mdmp]\n\
-                    0:000> .lastevent; .ecxr; kc 30; q\n\
-                    Last event: 1400.1a2c: Access violation - code c0000005 (first/second chance not available)\n\
-                    rax=0000000000000000 rbx=000000000012f4a0\n\
-                    postgres!ExecInterpExpr+0x1a3:\n\
-                    00007ff6`1234abcd 8b00            mov     eax,dword ptr [rax]\n\
-                    \x20# Call Site\n\
-                    00 postgres!ExecInterpExpr+0x1a3\n\
-                    01 postgres!ExecScan+0x88\n\
-                    02 postgres!standard_ExecutorRun\n\
-                    03 postgres!PortalRunSelect\n\
-                    quit:\n";
+        // What cdb printed over a backend that crashed in a module's _PG_init on the W64 runner.
+        let text = "Loading Dump File [D:\\a\\_temp\\pg\\crashdumps\\postgres-pid1512-1349359.mdmp]\n\
+                    0:000> cdb: Reading initial command '.lastevent; .ecxr; kc 30; q'\n\
+                    Last event: 5e8.acc: Access violation - code c0000005 (first/second chance not available)\n\
+                    \x20 debugger time: Sun Oct  4 07:14:33.588 2026 (UTC + 0:00)\n\
+                    rax=0000000000000000 rbx=00007ff7ac39ca90 rcx=0000000a3e7ff450\n\
+                    crashme!PG_init+0xe7:\n\
+                    00007ffc`5f461524 c70000000000    mov     dword ptr [rax],0 ds:00000000`00000000=????????\n\
+                    Call Site\n\
+                    crashme!PG_init\n\
+                    postgres!lookup_external_function\n\
+                    postgres!load_file\n\
+                    postgres!ValidatePgVersion\n\
+                    postgres\n\
+                    kernel32!BaseThreadInitThunk\n\
+                    ntdll!RtlUserThreadStart\n\
+                    quit:\n\
+                    NatVis script unloaded from 'C:\\Debuggers\\x64\\Visualizers\\winrt.natvis'\n";
         assert_eq!(
             minidump_signature("postgres", text),
-            "minidump of postgres, exception 0xc0000005 in postgres!ExecInterpExpr < postgres!ExecScan < postgres!standard_ExecutorRun"
+            "minidump of postgres, exception 0xc0000005 in crashme!PG_init < postgres!lookup_external_function < postgres!load_file"
+        );
+        let numbered = "Last event: 1400.1a2c: Access violation - code c0000005 (first/second chance not available)\n\
+                        \x20# Call Site\n\
+                        00 postgres!ExecInterpExpr+0x1a3\n\
+                        01 postgres!ExecScan+0x88\n\
+                        quit:\n";
+        assert_eq!(
+            minidump_signature("postgres", numbered),
+            "minidump of postgres, exception 0xc0000005 in postgres!ExecInterpExpr < postgres!ExecScan"
         );
         assert_eq!(
             minidump_signature("postgres", "nothing useful"),
