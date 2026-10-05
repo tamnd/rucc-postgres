@@ -44,7 +44,9 @@ on:
       - config-divergences.toml
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The nightly and the Monday run are both on main, and GitHub can start the first late enough
+  # that they overlap, so each schedule is a group of its own and neither cancels the other.
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.schedule || github.event_name }}
   cancel-in-progress: true
 
 permissions:
