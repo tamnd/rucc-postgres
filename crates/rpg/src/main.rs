@@ -150,6 +150,10 @@ fn plan(
         jobs: args.number("jobs", process::cores())?,
         twice: args.has("twice"),
         configure_only: args.has("configure-only"),
+        linker: args
+            .get("linker")
+            .map(|name| build::check_linker(name).map(|()| name.to_string()))
+            .transpose()?,
     })
 }
 

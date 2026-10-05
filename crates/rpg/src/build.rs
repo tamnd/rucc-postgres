@@ -43,6 +43,8 @@ pub struct Plan {
     pub twice: bool,
     /// Stop after configure, for comparing what two compilers answered to the probes.
     pub configure_only: bool,
+    /// The linker every link asks for with `-fuse-ld=`, when not the compiler's own choice.
+    pub linker: Option<String>,
 }
 
 /// The default build directory for a combination, under `work/`.
@@ -130,6 +132,9 @@ pub struct BuildInfo {
     /// The prefixes `RPG_PREFIXES` named, where configure looked for libraries.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prefixes: Vec<String>,
+    /// The linker `--linker` named, when it named one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linker: Option<String>,
 }
 
 impl BuildInfo {
@@ -446,6 +451,36 @@ pub fn prefix_options(system: System, prefixes: &[String]) -> Vec<String> {
     }
 }
 
+/// Whether `--linker` names a linker the way `-fuse-ld=` takes one: a word such as `mold`, `lld`
+/// or `bfd`, not a path or anything with a space in it.
+pub fn check_linker(name: &str) -> Result<(), String> {
+    if !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+    {
+        Ok(())
+    } else {
+        Err(format!(
+            "--linker {name:?} is not a linker name; give one as -fuse-ld= takes it, such as mold or lld"
+        ))
+    }
+}
+
+/// What autoconf gets in `LDFLAGS`: `-flto` at that level and `-fuse-ld=` when a linker is named.
+/// Meson gets the first as `b_lto` and the second in `c_link_args`.
+#[must_use]
+pub fn link_flags(level: Level, linker: Option<&str>) -> Vec<String> {
+    let mut flags = Vec::new();
+    if level.lto() {
+        flags.push("-flto".to_string());
+    }
+    if let Some(name) = linker {
+        flags.push(format!("-fuse-ld={name}"));
+    }
+    flags
+}
+
 /// Run the build.
 #[allow(clippy::too_many_lines)]
 pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
@@ -489,7 +524,12 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
             .args(plan.config.options(plan.system).iter().cloned())
             .args(prefix_options(plan.system, &prefixes))
             .args([format!("-Doptimization={}", plan.level.digit())])
-            .args(plan.level.lto().then_some("-Db_lto=true")),
+            .args(plan.level.lto().then_some("-Db_lto=true"))
+            .args(
+                plan.linker
+                    .as_ref()
+                    .map(|name| format!("-Dc_link_args=-fuse-ld={name}")),
+            ),
         System::Autoconf => Step::new(
             "configure",
             plan.source.join("configure"),
@@ -502,7 +542,11 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
             format!("CC={}", env["CC"]),
             format!("CFLAGS={}", plan.level.flag()),
         ])
-        .args(plan.level.lto().then_some("LDFLAGS=-flto")),
+        .args(
+            Some(link_flags(plan.level, plan.linker.as_deref()))
+                .filter(|flags| !flags.is_empty())
+                .map(|flags| format!("LDFLAGS={}", flags.join(" "))),
+        ),
     }
     .envs(&env);
     configure.unset.clone_from(&unset);
@@ -593,6 +637,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
         compiles,
         first_error,
         prefixes,
+        linker: plan.linker.clone(),
     };
     let path = plan.out.join("build.json");
     std::fs::write(
@@ -698,5 +743,21 @@ mod tests {
             "/usr/bin/gcc-16",
         );
         assert_eq!(out, Path::new("/w/REL_18_6-minimal-meson-O2-gcc-16"));
+    }
+
+    #[test]
+    fn a_named_linker_goes_on_every_link_after_lto() {
+        assert!(link_flags(Level::O2, None).is_empty());
+        assert_eq!(link_flags(Level::O2Lto, None), ["-flto"]);
+        assert_eq!(link_flags(Level::O0, Some("mold")), ["-fuse-ld=mold"]);
+        assert_eq!(
+            link_flags(Level::O2Lto, Some("lld")),
+            ["-flto", "-fuse-ld=lld"]
+        );
+        assert!(check_linker("mold").is_ok());
+        assert!(check_linker("lld").is_ok());
+        assert!(check_linker("/usr/bin/mold").is_err());
+        assert!(check_linker("mold -v").is_err());
+        assert!(check_linker("").is_err());
     }
 }
