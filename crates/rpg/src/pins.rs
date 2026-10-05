@@ -55,6 +55,10 @@ pub struct Pin {
     /// The repository the branch is cloned from.
     #[serde(default)]
     pub repository: Option<String>,
+    /// Tests, as `<suite>/<test>`, whose own race upstream fixed after this release. A failure of
+    /// one of them says nothing about the compiler, so `rpg test` counts it as flaky.
+    #[serde(default)]
+    pub flaky: Vec<String>,
 }
 
 impl Pins {
@@ -96,6 +100,16 @@ impl Pins {
 }
 
 impl Pin {
+    /// The tests of `suite` this pin lists as flaky, without the suite.
+    #[must_use]
+    pub fn flaky_in(&self, suite: &str) -> Vec<String> {
+        self.flaky
+            .iter()
+            .filter_map(|t| t.strip_prefix(suite)?.strip_prefix('/'))
+            .map(String::from)
+            .collect()
+    }
+
     /// The archive's file name, the last part of the URL.
     #[must_use]
     pub fn archive_name(&self) -> &str {
@@ -339,6 +353,25 @@ commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
             "postgresql-18.6.tar.bz2"
         );
         assert!(pins.get(Some("REL_19_0")).unwrap_err().contains("REL_18_6"));
+    }
+
+    #[test]
+    fn a_pin_lists_its_flaky_tests_by_suite() {
+        let text =
+            format!("{PINS}flaky = [\"world/xid_wraparound/002_limits\", \"regress/stats\"]\n");
+        let pins = Pins::parse(&text).unwrap();
+        let pin = pins.get(None).unwrap();
+        assert_eq!(pin.flaky_in("world"), ["xid_wraparound/002_limits"]);
+        assert_eq!(pin.flaky_in("regress"), ["stats"]);
+        assert!(pin.flaky_in("isolation").is_empty());
+        assert!(
+            Pins::parse(PINS)
+                .unwrap()
+                .get(None)
+                .unwrap()
+                .flaky
+                .is_empty()
+        );
     }
 
     #[test]

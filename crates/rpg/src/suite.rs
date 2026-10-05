@@ -85,6 +85,22 @@ pub struct Sets {
 }
 
 impl Sets {
+    /// The sets for a run, from the baseline when there is one, with `flaky` moved into the flaky
+    /// set whatever the baseline says of them.
+    #[must_use]
+    pub fn with_flaky(baseline: Option<Self>, flaky: &[String]) -> Option<Self> {
+        if flaky.is_empty() {
+            return baseline;
+        }
+        let mut sets = baseline.unwrap_or_default();
+        for test in flaky {
+            sets.passing.remove(test);
+            sets.failing.remove(test);
+            sets.flaky.insert(test.clone());
+        }
+        Some(sets)
+    }
+
     /// What the baseline says about a test.
     #[must_use]
     pub fn verdict(&self, test: &str) -> Option<&'static str> {
@@ -700,5 +716,12 @@ mod tests {
         assert_eq!(sets.verdict("char"), Some("failed"));
         assert_eq!(sets.verdict("stats"), Some("flaky"));
         assert_eq!(sets.verdict("nope"), None);
+        let moved = Sets::with_flaky(Some(sets), &["boolean".to_string()]).unwrap();
+        assert_eq!(moved.verdict("boolean"), Some("flaky"));
+        assert_eq!(moved.verdict("char"), Some("failed"));
+        let alone = Sets::with_flaky(None, &["boolean".to_string()]).unwrap();
+        assert_eq!(alone.verdict("boolean"), Some("flaky"));
+        assert_eq!(alone.verdict("char"), None);
+        assert_eq!(Sets::with_flaky(None, &[]), None);
     }
 }

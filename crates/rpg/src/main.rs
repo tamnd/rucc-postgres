@@ -283,6 +283,15 @@ fn test_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
             .ok()
             .and_then(|b| b.suites.get(&suite_name).cloned())
     });
+    let flaky = pins::Pins::load(&repo.pins())
+        .ok()
+        .and_then(|all| {
+            all.get(Some(&info.pin))
+                .ok()
+                .map(|p| p.flaky_in(&suite_name))
+        })
+        .unwrap_or_default();
+    let baseline = suite::Sets::with_flaky(baseline, &flaky);
     let plan = suite::SuitePlan {
         out: out.clone(),
         timeout: timeout(args, row, &info.level)?,
