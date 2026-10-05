@@ -1,0 +1,50 @@
+# The full configuration with what the `PG_TEST_EXTRA` suites that talk to a service need, which
+# PG9 brings in: GSSAPI for `kerberos`, LDAP for `ldap` and libcurl for `oauth`. `ssl` needs only
+# the OpenSSL the full configuration already has, and `load_balance` only a hosts file.
+#
+# The services themselves, a KDC, slapd and the OAuth test server, are started by the tests on the
+# same machine. The `world` workflow installs them on L64 and turns the suites on.
+
+name = "services"
+
+[autoconf]
+options = [
+    "--with-openssl",
+    "--with-icu",
+    "--with-readline",
+    "--with-zlib",
+    "--with-lz4",
+    "--with-zstd",
+    "--with-libxml",
+    "--with-libxslt",
+    "--with-gssapi",
+    "--with-ldap",
+    "--with-libcurl",
+    "--without-llvm",
+    "--disable-nls",
+    "--enable-tap-tests",
+    "--disable-cassert",
+    "--enable-debug",
+]
+
+[meson]
+options = [
+    "-Dauto_features=disabled",
+    "-Dssl=openssl",
+    "-Dicu=enabled",
+    "-Dreadline=enabled",
+    "-Dzlib=enabled",
+    "-Dlz4=enabled",
+    "-Dzstd=enabled",
+    "-Dlibxml=enabled",
+    "-Dlibxslt=enabled",
+    "-Dgssapi=enabled",
+    "-Dldap=enabled",
+    "-Dlibcurl=enabled",
+    "-Dllvm=disabled",
+    "-Dnls=disabled",
+    "-Duuid=none",
+    "-Dtap_tests=enabled",
+    "-Dcassert=false",
+    "-Ddebug=true",
+]
