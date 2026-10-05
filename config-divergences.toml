@@ -62,3 +62,34 @@ source = "probe"
 name = "Checking if \"SVE popcount\" : links"
 rows = ["LA64"]
 why = "meson's SVE popcount probe includes arm_sve.h, which rucc does not have yet. See the pg_config.h entry."
+
+# LA64 and REL_19_STABLE's PMULL CRC-32C. configure and meson build a program that runs pmull and
+# pmull2 from inline assembly on uint64x2_t operands with the "w" constraint, and when it builds
+# Postgres compiles the vectorized CRC-32C and picks it at run time on a CPU with the crypto
+# extension. rucc does not take a vector as an operand in a register constraint yet, so the probe
+# fails to compile, the define is left out, and Postgres uses the ARMv8 CRC instructions alone,
+# which both builds use on a CPU without PMULL. That is a slower CRC on long buffers and the same
+# answers.
+[[divergence]]
+source = "pg_config.h"
+name = "USE_PMULL_CRC32C_WITH_RUNTIME_CHECK"
+rows = ["LA64"]
+why = "rucc does not take a vector operand in an asm register constraint yet, so the PMULL probe fails and Postgres uses the ARMv8 CRC instructions alone, which gcc's build also uses on a CPU without PMULL."
+
+[[divergence]]
+source = "probe"
+name = "for pmull and pmull2"
+rows = ["LA64"]
+why = "configure's PMULL probe hands uint64x2_t operands to inline assembly, which rucc does not take yet. See the pg_config.h entry."
+
+[[divergence]]
+source = "probe"
+name = "for vectorized CRC-32C"
+rows = ["LA64"]
+why = "configure picks the PMULL CRC-32C only when the PMULL probe built. See the pg_config.h entry."
+
+[[divergence]]
+source = "probe"
+name = "Checking if \"CRYPTO CRC32C\" : links"
+rows = ["LA64"]
+why = "meson's PMULL probe hands uint64x2_t operands to inline assembly, which rucc does not take yet. See the pg_config.h entry."

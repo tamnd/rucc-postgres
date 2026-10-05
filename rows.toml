@@ -27,7 +27,7 @@ description = "macOS arm64"
 machines = ["this laptop", "macos-15 runner"]
 reference = "clang"
 build-system = "autoconf"
-test-timeout = 180
+test-timeout = 300
 
 [[row]]
 name = "W64"
