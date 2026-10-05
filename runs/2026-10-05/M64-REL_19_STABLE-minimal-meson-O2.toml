@@ -1,0 +1,15 @@
+date = "2026-10-05"
+row = "M64"
+pin = "REL_19_STABLE"
+commit = "a2148471b0db8fb44c43d5a2933d99c82f3aa0c8"
+config = "minimal"
+system = "meson"
+level = "-O2"
+compiler = "rucc 0.20.0"
+host = "sjc22-bt149-e21e839d-347d-4722-8d5c-ba8eafe3c8d4-EE786649D9B0"
+built = true
+failing = ["world/xid_wraparound/003_wraparounds"]
+
+[counts]
+failed = 1
+passed = 981

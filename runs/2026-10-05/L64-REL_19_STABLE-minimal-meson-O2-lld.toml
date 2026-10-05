@@ -1,0 +1,15 @@
+date = "2026-10-05"
+row = "L64"
+pin = "REL_19_STABLE"
+commit = "a2148471b0db8fb44c43d5a2933d99c82f3aa0c8"
+config = "minimal"
+system = "meson"
+level = "-O2"
+linker = "lld"
+compiler = "rucc 0.20.0"
+host = "runnervm8df0l"
+built = true
+failing = []
+
+[counts]
+passed = 982
