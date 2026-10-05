@@ -66,6 +66,10 @@ jobs:
         level: [-O0, -O2]
         system: [autoconf, meson]
         config: [minimal]
+        # Empty here so that an include naming a linker is a leg of its own. An include that only
+        # adds a key the matrix does not have is merged into every combination it matches instead,
+        # which made the plain -O2 legs the ones linked by mold and lld.
+        linker: ['']
         include:
           - row: LA64
             level: -O0
