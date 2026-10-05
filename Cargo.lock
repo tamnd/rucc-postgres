@@ -164,6 +164,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpg-ar"
+version = "0.4.0"
+dependencies = [
+ "rucc-archive",
+]
+
+[[package]]
 name = "rpg-shim"
 version = "0.4.0"
 dependencies = [
@@ -173,6 +180,12 @@ dependencies = [
  "sha2",
  "toml",
 ]
+
+[[package]]
+name = "rucc-archive"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c626ad93653c16ceb27c43c9ba5cbcb3c9c6c126aadf95e7f3a1164e4289fad4"
 
 [[package]]
 name = "serde"
