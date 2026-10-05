@@ -323,15 +323,20 @@ jobs:
   # MSYS2's gcc. The setup is the windows workflow's: IPC::Run before its Win32 binmode change, Unix
   # sockets for the TAP tests with their directory under the runner's temp directory, and Windows's
   # own tar for the tests that unpack a base backup. Like M64 it runs each night and by hand, not on
-  # pull requests.
+  # pull requests. PG8's full configuration runs at -O2 with MSYS2's own builds of the libraries,
+  # each made by gcc.
   world-w64:
-    name: world on W64 under meson at ${{ matrix.level }}
+    name: world on W64 under meson at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
     if: github.event_name != 'pull_request' && inputs.rows != 'M64'
     runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
         level: [-O0, -O2]
+        config: [minimal]
+        include:
+          - level: -O2
+            config: full
     timeout-minutes: 330
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.20.0' }}
@@ -370,6 +375,12 @@ jobs:
             unzip
             jq
             git
+      - name: install the libraries the full configuration links
+        if: matrix.config == 'full'
+        run: |
+          pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-icu \
+            mingw-w64-ucrt-x86_64-readline mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-lz4 \
+            mingw-w64-ucrt-x86_64-zstd mingw-w64-ucrt-x86_64-libxml2 mingw-w64-ucrt-x86_64-libxslt
       - name: install rucc
         run: |
           set -euo pipefail
@@ -412,7 +423,7 @@ jobs:
           cp /c/Windows/System32/tar.exe "$RUNNER_TEMP/wintar/"
           PATH="$RUNNER_TEMP/wintar:$PATH" \
           ./target/release/rpg.exe build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system meson \
-            --config minimal --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
+            --config ${{ matrix.config }} --out "$(cygpath -m "$RUNNER_TEMP/pg")" --jobs "$(nproc)"
       # Windows Error Reporting writes a minidump of any postgres.exe that crashes from outside the
       # process, whole even when the one Postgres writes of itself is not, into results/ for rpg triage.
       - name: windows error reporting
@@ -441,7 +452,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN world on W64 under meson at ${{ matrix.level }} with the minimal configuration and rucc $RUCC_VERSION"
+            echo "### $PIN world on W64 under meson at ${{ matrix.level }} with the ${{ matrix.config }} configuration and rucc $RUCC_VERSION"
             echo
             jq -r '"build: \(.phase)" + (if .["first-error"] then ", \(.["first-error"])" else "" end)' \
               "$RUNNER_TEMP/pg/build.json" 2>/dev/null || echo "rpg build did not write build.json"
@@ -459,7 +470,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-W64-${{ env.PIN }}-meson${{ matrix.level }}
+          name: rpg-world-W64-${{ env.PIN }}-meson${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md
