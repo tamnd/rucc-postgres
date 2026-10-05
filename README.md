@@ -16,7 +16,7 @@ Postgres is one project, but a large one: about 1.8 million lines of C under `sr
 
 ## Commands
 
-The harness is one binary, `rpg`, plus the shim `rpg-cc` that has to sit next to it. It is run from anywhere inside the checkout and finds the root by walking up to `pins.toml`, or from `RPG_ROOT`.
+The harness is one binary, `rpg`, plus the shim `rpg-cc` that has to sit next to it, and `rpg-ar`, an `ar` that writes its archives with rucc's archive writer. It is run from anywhere inside the checkout and finds the root by walking up to `pins.toml`, or from `RPG_ROOT`.
 
 ```
 cargo build --release
@@ -84,6 +84,10 @@ The server is then stopped, its data directory removed, and the main regression 
 When the real compiler is rucc, which is anything whose `--version` starts with `rucc `, and rucc understands `-frucc-trace`, the shim adds `-frucc-trace=<tmp>` to every call that compiles C and folds the trace lines, with rucc's own phase and pass timings, into the record under `rucc`. Whether rucc understands the option is probed once per build by compiling a one line file, so an older rucc is simply run without it. `RPG_TWICE=1`, or `rpg build --twice`, compiles every translation unit a second time and fails the call if the two objects differ.
 
 `RPG_REAL_CC`, `RPG_COMPILE_LOG`, `RPG_RUCC_TRACE` and `RPG_TWICE` override the settings file, which makes the shim usable by hand as well.
+
+## The archiver
+
+PG9 asks for a build with rucc's own archiver as `AR`. rucc writes archives with its `rucc-archive` crate, but only out of what it compiles itself under `--emit=archive`, and Postgres's build archives objects it compiled earlier. `rpg-ar` is that step with rucc's writer in it. It takes the `ar crs` and `ar csr` lines autoconf and meson write, reads the names each ELF member defines, and has `rucc-archive` write the file and its symbol index, so every static link of `libpgport.a` and the other archives goes through an index rucc's code wrote. `r` replaces a member of the same name in an archive that is already there and adds the rest, `q` appends, and given only an archive, as `ranlib` is, it checks that the file is one and leaves it alone, since the index is always there. `--version` exits zero, which is how meson recognizes an `ar`. It reads ELF only, so it is for the Linux rows.
 
 ## Records
 

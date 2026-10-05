@@ -1,0 +1,18 @@
+[package]
+name = "rpg-ar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "An ar for Postgres's build that writes its archives with rucc's archive writer"
+
+[[bin]]
+name = "rpg-ar"
+path = "src/main.rs"
+
+[dependencies]
+rucc-archive.workspace = true
+
+[lints]
+workspace = true

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/rpg",
+    "crates/rpg-ar",
     "crates/rpg-shim",
 ]
 resolver = "3"
@@ -17,6 +18,8 @@ repository = "https://github.com/tamnd/rucc-postgres"
 rpg-shim = { path = "crates/rpg-shim", version = "0.4.0" }
 libc = "0.2"
 regex = "1"
+# rucc's archive writer, whose Rust API is unstable by its own account, so held to one release.
+rucc-archive = "=0.20.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

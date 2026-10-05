@@ -62,6 +62,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.2
       - name: cargo test
         run: cargo test --workspace
+      # rpg-ar against the machine's own compiler and linker: ld refuses an archive with no index,
+      # so a program that links against one rpg-ar wrote is one whose index ld could read.
+      - name: an archive rpg-ar writes links
+        if: runner.os == 'Linux'
+        run: |
+          set -eux
+          cargo build -p rpg-ar
+          d="$(mktemp -d)"
+          printf 'int twice(int x) { return 2 * x; }\n' > "$d/twice.c"
+          printf 'int answer_from_a_member_with_a_long_name = 21;\n' > "$d/answer_from_a_long_name.c"
+          printf 'extern int answer_from_a_member_with_a_long_name; int twice(int);\nint main(void) { return twice(answer_from_a_member_with_a_long_name) == 42 ? 0 : 1; }\n' > "$d/main.c"
+          cc -c -o "$d/twice.o" "$d/twice.c"
+          cc -c -o "$d/answer_from_a_long_name.o" "$d/answer_from_a_long_name.c"
+          ./target/debug/rpg-ar crs "$d/libt.a" "$d/twice.o" "$d/answer_from_a_long_name.o"
+          ar t "$d/libt.a"
+          nm --print-armap "$d/libt.a"
+          cc -o "$d/main" "$d/main.c" -L"$d" -lt
+          "$d/main"
 
   # rpg end to end on a real tree: the pinned Postgres built by a released rucc at -O0 and -O2 with the
   # minimal configuration, then every suite `rpg test` knows run against it. The unit tests above
