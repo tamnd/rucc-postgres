@@ -64,6 +64,9 @@ pub struct Measure {
     /// The fingerprint of what a query printed, the same on every run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<String>,
+    /// The fingerprint of the plan the server chose for a query, from `explain (costs off)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<String>,
 }
 
 impl Measure {
@@ -75,6 +78,7 @@ impl Measure {
             samples: Vec::new(),
             failed: None,
             answer: None,
+            plan: None,
         }
     }
 }
@@ -256,6 +260,9 @@ pub fn compare(a: &Bench, b: &Bench) -> String {
             _ if left.answer.is_some() && right.answer.is_some() && left.answer != right.answer => {
                 "different answers".to_string()
             }
+            _ if left.plan.is_some() && right.plan.is_some() && left.plan != right.plan => {
+                "different plans".to_string()
+            }
             (None, None, Some(x), Some(y)) => {
                 if left.name.starts_with(ANALYTIC) {
                     analytic.push(speed(left.higher_is_better, x, y));
@@ -284,7 +291,7 @@ pub fn compare(a: &Bench, b: &Bench) -> String {
             (analytic.iter().copied().map(f64::ln).sum::<f64>() / analytic.len() as f64).exp();
         let _ = write!(
             text,
-            "\nOver the {} analytic queries both runs finished with the same answers, b is {} by the geometric mean.\n",
+            "\nOver the {} analytic queries both runs finished with the same answers and plans, b is {} by the geometric mean.\n",
             analytic.len(),
             faster_or_slower(mean)
         );
@@ -405,6 +412,11 @@ fn pgbench_measures(install: &Install, plan: &BenchPlan) -> Result<Vec<Measure>,
 
 /// The analytic set, loaded and then each query run once to warm up and keep its answer, and
 /// then `--runs` times in turns. A query that answers differently on a later run fails.
+///
+/// Each query's plan is kept too, in `analytic-plans.txt` and as a fingerprint. `vacuum analyze`
+/// reads a random sample of the larger tables, so two servers loaded with the same rows can end
+/// up with different statistics and pick different plans for one query, and then the two times
+/// say nothing about the compilers.
 fn analytic_measures(install: &Install, plan: &BenchPlan) -> Result<Vec<Measure>, String> {
     let sql = install.dir().join("analytic-load.sql");
     std::fs::write(&sql, analytic::load(plan.scale_factor))
@@ -420,14 +432,26 @@ fn analytic_measures(install: &Install, plan: &BenchPlan) -> Result<Vec<Measure>
     }
     let queries = analytic::queries();
     let mut measures = Vec::new();
+    let mut plans = String::new();
     for (name, query) in &queries {
         let mut measure = Measure::new(&format!("{ANALYTIC}{name}"), "ms", false);
         match install.psql(query) {
             Ok(text) => measure.answer = Some(analytic::fingerprint(&text)),
             Err(why) => measure.failed = Some(format!("the first run: {why}")),
         }
+        match install.psql(&format!("explain (costs off) {query}")) {
+            Ok(text) => {
+                measure.plan = Some(analytic::fingerprint(&text));
+                let _ = write!(plans, "-- {name}\n{text}\n");
+            }
+            Err(why) => {
+                let _ = write!(plans, "-- {name}\nexplain failed: {why}\n\n");
+            }
+        }
         measures.push(measure);
     }
+    let kept = install.dir().join("analytic-plans.txt");
+    std::fs::write(&kept, plans).map_err(|e| format!("writing {}: {e}", kept.display()))?;
     for run in 1..=plan.runs {
         eprintln!("rpg: the analytic set, run {run} of {}", plan.runs);
         for ((_, query), measure) in queries.iter().zip(&mut measures) {
@@ -672,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn the_analytic_set_is_summed_up_by_the_geometric_mean_and_a_wrong_answer_is_called_out() {
+    fn the_analytic_mean_leaves_out_a_wrong_answer_and_a_different_plan() {
         let query = |name: &str, answer: &str, samples: &[f64]| Measure {
             answer: Some(answer.to_string()),
             ..measure(&format!("{ANALYTIC}{name}"), "ms", false, samples)
@@ -683,6 +707,10 @@ mod tests {
                 query("one", "aa", &[100.0, 100.0, 100.0]),
                 query("two", "bb", &[100.0, 100.0, 100.0]),
                 query("three", "cc", &[100.0, 100.0, 100.0]),
+                Measure {
+                    plan: Some("p1".into()),
+                    ..query("four", "dd", &[100.0, 100.0, 100.0])
+                },
             ],
         );
         let mut b = bench(
@@ -691,12 +719,17 @@ mod tests {
                 query("one", "aa", &[200.0, 200.0, 200.0]),
                 query("two", "bb", &[50.0, 50.0, 50.0]),
                 query("three", "cd", &[100.0, 100.0, 100.0]),
+                Measure {
+                    plan: Some("p2".into()),
+                    ..query("four", "dd", &[400.0, 400.0, 400.0])
+                },
             ],
         );
         let text = compare(&a, &b);
         assert!(text.contains("| analytic one (ms) | 100.0 (100.0 to 100.0) | 200.0 (200.0 to 200.0) | 50.0% slower |"), "{text}");
         assert!(text.contains("| analytic three (ms) | 100.0 (100.0 to 100.0) | 100.0 (100.0 to 100.0) | different answers |"), "{text}");
-        assert!(text.contains("Over the 2 analytic queries both runs finished with the same answers, b is 0.0% faster by the geometric mean."), "{text}");
+        assert!(text.contains("| analytic four (ms) | 100.0 (100.0 to 100.0) | 400.0 (400.0 to 400.0) | different plans |"), "{text}");
+        assert!(text.contains("Over the 2 analytic queries both runs finished with the same answers and plans, b is 0.0% faster by the geometric mean."), "{text}");
         b.scale_factor = 0.1;
         assert!(compare(&a, &b).contains("differ in more than the compiler"));
     }
@@ -707,6 +740,7 @@ mod tests {
         failed.failed = Some("run 2: pgbench exited Some(2)".into());
         let mut answered = measure("analytic top supplier", "ms", false, &[12.5]);
         answered.answer = Some("cbf29ce484222325".into());
+        answered.plan = Some("af63bd4c8601b7df".into());
         let b = bench(
             "rucc 0.18.11",
             vec![

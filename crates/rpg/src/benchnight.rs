@@ -72,7 +72,8 @@ pub struct BenchNight {
     pub seconds: u64,
     /// The analytic set's scale factor.
     pub scale_factor: f64,
-    /// The measures both builds finished with the same answers, in `bench.json`'s order.
+    /// The measures both builds finished with the same answers and plans, in `bench.json`'s
+    /// order.
     pub ratios: Vec<Ratio>,
     /// The measures that could not be compared, with why.
     #[serde(default)]
@@ -170,6 +171,10 @@ fn ratio(gcc: &Measure, rucc: &Measure) -> Result<Ratio, String> {
     }
     if gcc.answer != rucc.answer {
         return Err("the two servers gave different answers".into());
+    }
+    // A run from before plans were kept has none, and is compared as it was.
+    if gcc.plan.is_some() && rucc.plan.is_some() && gcc.plan != rucc.plan {
+        return Err("the two servers planned the query differently".into());
     }
     let (Some(g), Some(r)) = (spread(&gcc.samples), spread(&rucc.samples)) else {
         return Err("no samples".into());
@@ -382,6 +387,7 @@ mod tests {
             samples: samples.to_vec(),
             failed: None,
             answer: None,
+            plan: None,
         }
     }
 
@@ -472,6 +478,23 @@ mod tests {
                 "analytic pricing summary: the two servers gave different answers",
             ]
         );
+    }
+
+    #[test]
+    fn a_query_the_two_servers_planned_differently_is_left_out_of_the_mean() {
+        let (mut gcc, mut rucc) = pair("2026-10-03", 250.0, 300.0);
+        gcc.measures[1].plan = Some("hash join first".into());
+        rucc.measures[1].plan = Some("nested loop first".into());
+        let night = BenchNight::from_pair(&gcc, &rucc).unwrap();
+        let names: Vec<_> = night.ratios.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["pgbench select-only", "regression suite"]);
+        assert_eq!(
+            night.missing,
+            vec!["analytic pricing summary: the two servers planned the query differently"]
+        );
+        rucc.measures[1].plan = Some("hash join first".into());
+        let night = BenchNight::from_pair(&gcc, &rucc).unwrap();
+        assert!(night.missing.is_empty());
     }
 
     #[test]
