@@ -48,6 +48,9 @@ pub struct Night {
     /// The linker the build named, when it named one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linker: Option<String>,
+    /// The file name of the archiver the build named, when it named one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ar: Option<String>,
     /// The first line of the compiler's `--version`.
     pub compiler: String,
     /// The machine.
@@ -63,6 +66,13 @@ pub struct Night {
     /// Every test that did not pass or skip, as `suite/test`.
     #[serde(default)]
     pub failing: BTreeSet<String>,
+}
+
+/// What a night's name calls an archiver: the file name of its path without an extension, so
+/// `/w/target/release/rpg-ar` is `rpg-ar` and `C:/x/rpg-ar.exe` is too.
+fn archiver_name(path: &str) -> String {
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    file.strip_suffix(".exe").unwrap_or(file).to_string()
 }
 
 impl Night {
@@ -90,6 +100,7 @@ impl Night {
             system: info.system.clone(),
             level: info.level.clone(),
             linker: info.linker.clone(),
+            ar: info.ar.as_deref().map(archiver_name),
             compiler: info.compiler.clone(),
             host: info.host.clone(),
             built: info.phase == Phase::Built,
@@ -105,6 +116,9 @@ impl Night {
         let mut name = format!("{}-{}-{}{}", self.pin, self.config, self.system, self.level);
         if let Some(linker) = &self.linker {
             name = format!("{name}-{linker}");
+        }
+        if let Some(ar) = &self.ar {
+            name = format!("{name}-{ar}");
         }
         match &self.row {
             Some(row) => format!("{row}-{name}"),
@@ -513,6 +527,10 @@ mod tests {
         assert_eq!(n.name(), "LA64-REL_18_6-minimal-autoconf-O2");
         n.linker = Some("mold".to_string());
         assert_eq!(n.name(), "LA64-REL_18_6-minimal-autoconf-O2-mold");
+        n.linker = None;
+        n.ar = Some(archiver_name("/w/target/release/rpg-ar"));
+        assert_eq!(n.name(), "LA64-REL_18_6-minimal-autoconf-O2-rpg-ar");
+        assert_eq!(archiver_name("C:\\w\\rpg-ar.exe"), "rpg-ar");
     }
 
     #[test]

@@ -154,6 +154,14 @@ fn plan(
             .get("linker")
             .map(|name| build::check_linker(name).map(|()| name.to_string()))
             .transpose()?,
+        ar: args
+            .get("ar")
+            .map(|path| {
+                process::canonical(Path::new(path))
+                    .map(|p| p.display().to_string())
+                    .map_err(|e| format!("--ar {path}: {e}"))
+            })
+            .transpose()?,
     })
 }
 
