@@ -4,7 +4,8 @@
 # run each night on the default pin, each Monday on the head of REL_19_STABLE, by hand, and on the
 # pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
 # row alone and `rows: W64` the Windows one. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, at -O2 with -flto
-# under both build systems, and at -O2 with the full configuration under both build systems.
+# under both build systems, at -O2 with the full configuration under both build systems, and at
+# -O2 linked by mold under autoconf and by lld under meson.
 name: world
 
 on:
@@ -55,7 +56,7 @@ jobs:
   # LA64 runs on GitHub's arm runners under autoconf only, which is PG4's row brought forward so
   # that what AArch64 is missing shows up before that milestone starts.
   world:
-    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}
+    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}${{ matrix.linker && format(' linked by {0}', matrix.linker) || '' }}
     if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
@@ -105,6 +106,16 @@ jobs:
             level: -O2
             system: autoconf
             config: full
+          # PG9's other linkers on L64 at -O2, mold under autoconf and lld under meson, so that
+          # each build system's way of naming one is used.
+          - row: L64
+            level: -O2
+            system: autoconf
+            linker: mold
+          - row: L64
+            level: -O2
+            system: meson
+            linker: lld
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.20.0' }}
@@ -126,6 +137,9 @@ jobs:
         run: |
           sudo apt-get install -y libssl-dev libicu-dev libreadline-dev zlib1g-dev liblz4-dev libzstd-dev \
             libxml2-dev libxslt1-dev pkg-config
+      - name: install the linker the leg names
+        if: matrix.linker
+        run: sudo apt-get install -y ${{ matrix.linker }}
       - name: install rucc
         run: |
           set -euo pipefail
@@ -144,7 +158,7 @@ jobs:
       - name: rpg build
         run: |
           ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config ${{ matrix.config || 'minimal' }} \
-            --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
+            ${{ matrix.linker && format('--linker {0}', matrix.linker) || '' }} --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
       # What rpg triage reads afterwards: a core from any process that crashes, named with the
       # path of its executable so gdb can be given both, and server logs at debug1, which
       # TEMP_CONFIG reaches under autoconf and in every TAP script.
@@ -166,7 +180,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }} with the ${{ matrix.config || 'minimal' }} configuration and rucc $RUCC_VERSION"
+            echo "### $PIN world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }} with the ${{ matrix.config || 'minimal' }} configuration and rucc $RUCC_VERSION${{ matrix.linker && format(', linked by {0}', matrix.linker) || '' }}"
             echo
             grep '^world:' "$RUNNER_TEMP/world.txt" || echo "rpg test did not get as far as a count"
             echo
@@ -181,7 +195,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}
+          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}${{ matrix.linker && format('-{0}', matrix.linker) || '' }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md

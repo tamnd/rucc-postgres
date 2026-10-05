@@ -3,7 +3,8 @@
 //! The world job runs one row per system and level and keeps `build.json` and `records.jsonl`
 //! from each. This reads a directory holding one such pair per row and writes a night file for
 //! each row to `runs/<date>/<name>.toml`, where the name is the row, pin, configuration, system
-//! and level, for example `L64-REL_18_6-minimal-autoconf-O2`. The row comes from the records,
+//! and level, for example `L64-REL_18_6-minimal-autoconf-O2`, and the linker when the build named
+//! one, `L64-REL_18_6-minimal-autoconf-O2-mold`. The row comes from the records,
 //! which have it when `rpg test` was given `--row`, or else from the artifact's name,
 //! `rpg-world-<row>-...`, since a build that stopped leaves no records to say, and is left out of
 //! the name when neither does. A night file holds the counts and the tests that did not pass, not
@@ -44,6 +45,9 @@ pub struct Night {
     pub system: String,
     /// The level.
     pub level: String,
+    /// The linker the build named, when it named one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linker: Option<String>,
     /// The first line of the compiler's `--version`.
     pub compiler: String,
     /// The machine.
@@ -85,6 +89,7 @@ impl Night {
             config: info.config.clone(),
             system: info.system.clone(),
             level: info.level.clone(),
+            linker: info.linker.clone(),
             compiler: info.compiler.clone(),
             host: info.host.clone(),
             built: info.phase == Phase::Built,
@@ -97,7 +102,10 @@ impl Night {
     /// The file name without the extension.
     #[must_use]
     pub fn name(&self) -> String {
-        let name = format!("{}-{}-{}{}", self.pin, self.config, self.system, self.level);
+        let mut name = format!("{}-{}-{}{}", self.pin, self.config, self.system, self.level);
+        if let Some(linker) = &self.linker {
+            name = format!("{name}-{linker}");
+        }
         match &self.row {
             Some(row) => format!("{row}-{name}"),
             None => name,
@@ -503,6 +511,8 @@ mod tests {
         assert_eq!(n.name(), "REL_18_6-minimal-autoconf-O2");
         n.row = Some("LA64".to_string());
         assert_eq!(n.name(), "LA64-REL_18_6-minimal-autoconf-O2");
+        n.linker = Some("mold".to_string());
+        assert_eq!(n.name(), "LA64-REL_18_6-minimal-autoconf-O2-mold");
     }
 
     #[test]
