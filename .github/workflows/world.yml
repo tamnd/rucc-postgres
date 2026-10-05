@@ -643,7 +643,7 @@ jobs:
   # The same on M64, Apple Clang's modules in rucc's server and the other way round.
   cross-modules-m64:
     name: cross-modules on M64 at ${{ matrix.level }}
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && inputs.rows != 'W64'
     runs-on: macos-15
     strategy:
       fail-fast: false
