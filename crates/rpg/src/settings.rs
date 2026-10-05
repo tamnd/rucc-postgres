@@ -263,6 +263,14 @@ mod tests {
                 .iter()
                 .any(|o| o == "--with-libxslt")
         );
+        let services = BuildConfig::load(&root.join("configs/services.toml")).unwrap();
+        assert_eq!(services.name, "services");
+        assert!(
+            services
+                .options(System::Meson)
+                .iter()
+                .any(|o| o == "-Dgssapi=enabled")
+        );
         let rows = Rows::load(&root.join("rows.toml")).unwrap();
         assert_eq!(rows.get("L64").unwrap().reference, "gcc-16");
         assert_eq!(rows.rows.len(), 4);

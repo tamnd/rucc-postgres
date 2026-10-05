@@ -6,6 +6,8 @@
 # row alone and `rows: W64` the Windows one. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, at -O2 with -flto
 # under both build systems, at -O2 with the full configuration under both build systems, and at
 # -O2 linked by mold under autoconf and by lld under meson, and archived by rpg-ar under both.
+# One more L64 leg at -O2 under meson builds the services configuration and adds the
+# PG_TEST_EXTRA suites that need a service.
 name: world
 
 on:
@@ -56,7 +58,7 @@ jobs:
   # LA64 runs on GitHub's arm runners under autoconf only, which is PG4's row brought forward so
   # that what AArch64 is missing shows up before that milestone starts.
   world:
-    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}${{ matrix.linker && format(' linked by {0}', matrix.linker) || '' }}${{ matrix.ar && format(' archived by {0}', matrix.ar) || '' }}
+    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config && matrix.config != 'minimal' && format(' with the {0} configuration', matrix.config) || '' }}${{ matrix.linker && format(' linked by {0}', matrix.linker) || '' }}${{ matrix.ar && format(' archived by {0}', matrix.ar) || '' }}
     if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
@@ -131,11 +133,17 @@ jobs:
             level: -O2
             system: meson
             ar: rpg-ar
+          # PG9's suites that need a service, ssl, kerberos, ldap, oauth and load_balance, on L64
+          # at -O2 under meson, with the services the tests start installed beside them.
+          - row: L64
+            level: -O2
+            system: meson
+            config: services
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.20.0' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
-      PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
+      PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound${{ matrix.config == 'services' && ' ssl kerberos ldap oauth load_balance' || '' }}
       # pg_ctl gives a server 60 seconds to stop by default, and the xid_wraparound tests leave a
       # shutdown checkpoint that can take longer on a busy runner. This is the TAP harness's own
       # default for every other wait.
@@ -148,10 +156,24 @@ jobs:
           sudo apt-get update || echo "at least one apt source is unhappy, carrying on"
           sudo apt-get install -y libipc-run-perl meson ninja-build bison flex gdb
       - name: install the libraries the full configuration links
-        if: matrix.config == 'full'
+        if: matrix.config == 'full' || matrix.config == 'services'
         run: |
           sudo apt-get install -y libssl-dev libicu-dev libreadline-dev zlib1g-dev liblz4-dev libzstd-dev \
             libxml2-dev libxslt1-dev pkg-config
+      - name: install what the suites that need a service start
+        if: matrix.config == 'services'
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libkrb5-dev krb5-kdc krb5-admin-server krb5-user \
+            libldap-dev slapd ldap-utils libcurl4-openssl-dev python3
+          # Ubuntu's AppArmor profile for slapd keeps it out of the build tree, where the ldap tests
+          # write its configuration and database.
+          if [ -e /etc/apparmor.d/usr.sbin.slapd ]; then
+            sudo ln -sf /etc/apparmor.d/usr.sbin.slapd /etc/apparmor.d/disable/
+            sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.slapd || true
+          fi
+          # 004_load_balance_dns looks this name up and expects three addresses for it.
+          printf '127.0.0.1 pg-loadbalancetest\n127.0.0.2 pg-loadbalancetest\n127.0.0.3 pg-loadbalancetest\n' |
+            sudo tee -a /etc/hosts
       - name: install the linker the leg names
         if: matrix.linker
         run: sudo apt-get install -y ${{ matrix.linker }}
@@ -210,7 +232,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}${{ matrix.linker && format('-{0}', matrix.linker) || '' }}${{ matrix.ar && format('-{0}', matrix.ar) || '' }}
+          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config && matrix.config != 'minimal' && format('-{0}', matrix.config) || '' }}${{ matrix.linker && format('-{0}', matrix.linker) || '' }}${{ matrix.ar && format('-{0}', matrix.ar) || '' }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md
