@@ -69,7 +69,11 @@ impl Night {
         let mut failing = BTreeSet::new();
         for record in records {
             *counts.entry(record.outcome.name().to_string()).or_insert(0) += 1;
-            if !matches!(record.outcome, Outcome::Passed | Outcome::Skipped) {
+            // A test the baseline or the pin calls flaky is counted, but is not one to open an
+            // issue about when it fails.
+            if !matches!(record.outcome, Outcome::Passed | Outcome::Skipped)
+                && record.baseline.as_deref() != Some("flaky")
+            {
                 failing.insert(format!("{}/{}", record.suite, record.test));
             }
         }
@@ -562,7 +566,11 @@ mod tests {
         });
         std::fs::write(row.join("build.json"), info.to_string()).unwrap();
         let line = r#"{"project":"postgres","pin":"REL_18_6","row":"L64","host":"runner","level":"-O2","system":"autoconf","config":"minimal","suite":"regress","test":"int8","outcome":"failed","compiler":"rucc 0.12.3"}"#;
-        std::fs::write(row.join("records.jsonl"), format!("{line}\n")).unwrap();
+        // A failure the pin or the baseline calls flaky is not a regression.
+        let flaky = line
+            .replace("\"int8\"", "\"stats\"")
+            .replace('}', ",\"baseline\":\"flaky\"}");
+        std::fs::write(row.join("records.jsonl"), format!("{line}\n{flaky}\n")).unwrap();
         let recorded = record(&dir.join("nights"), &runs, &reports).unwrap();
         assert_eq!(recorded.written.len(), 1);
         assert!(
