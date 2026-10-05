@@ -90,4 +90,7 @@ create index on orders (o_orderdate);
 create index on lineitem (l_partkey);
 create index on lineitem (l_shipdate);
 create index on partsupp (ps_suppkey);
+-- A larger sample than the default, so that two servers that load the same rows come out with
+-- close enough statistics to choose the same plans.
+set default_statistics_target = 1000;
 vacuum analyze;
