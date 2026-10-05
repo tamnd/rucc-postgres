@@ -40,6 +40,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
             "twice",
             "configure-only",
             "linker",
+            "ar",
         ],
         "test" => &["suite", "out", "row", "records", "run", "timeout"],
         "baseline" => &[
@@ -97,6 +98,7 @@ usage:
   rpg fetch [--pin NAME] [--no-upstream-check]
   rpg build --cc PATH [--level -O0|-O1|-O2|-Os] [--system meson|autoconf] [--config minimal|full]
             [--out DIR] [--pin NAME] [--jobs N] [--twice] [--configure-only] [--linker NAME]
+            [--ar PATH]
   rpg test [--suite regress|isolation|ecpg|contrib|modules|world] [--out DIR] [--row ROW]
            [--records FILE] [--run N] [--timeout S]
   rpg baseline --row ROW [--runs 3] [--system S] [--level L] [--cc PATH] [--config C] [--pin P]

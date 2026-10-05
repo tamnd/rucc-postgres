@@ -45,6 +45,8 @@ pub struct Plan {
     pub configure_only: bool,
     /// The linker every link asks for with `-fuse-ld=`, when not the compiler's own choice.
     pub linker: Option<String>,
+    /// The archiver, as an absolute path, when not the machine's `ar`.
+    pub ar: Option<String>,
 }
 
 /// The default build directory for a combination, under `work/`.
@@ -135,6 +137,9 @@ pub struct BuildInfo {
     /// The linker `--linker` named, when it named one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linker: Option<String>,
+    /// The archiver `--ar` named, when it named one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ar: Option<String>,
 }
 
 impl BuildInfo {
@@ -512,7 +517,13 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
         );
     }
     install_shim(plan, trace)?;
-    let (env, unset) = environment(&plan.out);
+    let (mut env, unset) = environment(&plan.out);
+    // Both build systems take the archiver from `AR` when they configure and keep it, and the
+    // makefiles run `RANLIB` over a static library after it, which `rpg-ar` answers as ranlib does.
+    if let Some(ar) = &plan.ar {
+        env.insert("AR".to_string(), ar.clone());
+        env.insert("RANLIB".to_string(), ar.clone());
+    }
     let prefixes = prefixes();
 
     let configure_log = plan.out.join("configure.log");
@@ -638,6 +649,7 @@ pub fn build(plan: &Plan) -> Result<BuildInfo, String> {
         first_error,
         prefixes,
         linker: plan.linker.clone(),
+        ar: plan.ar.clone(),
     };
     let path = plan.out.join("build.json");
     std::fs::write(

@@ -5,7 +5,7 @@
 # pull requests that change how the suites run or are read. By hand, `rows: M64` runs the macOS
 # row alone and `rows: W64` the Windows one. L64 also runs under autoconf at -O1 and -Os, the levels PG8 adds, at -O2 with -flto
 # under both build systems, at -O2 with the full configuration under both build systems, and at
-# -O2 linked by mold under autoconf and by lld under meson.
+# -O2 linked by mold under autoconf and by lld under meson, and archived by rpg-ar under both.
 name: world
 
 on:
@@ -56,7 +56,7 @@ jobs:
   # LA64 runs on GitHub's arm runners under autoconf only, which is PG4's row brought forward so
   # that what AArch64 is missing shows up before that milestone starts.
   world:
-    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}${{ matrix.linker && format(' linked by {0}', matrix.linker) || '' }}
+    name: world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }}${{ matrix.config == 'full' && ' with the full configuration' || '' }}${{ matrix.linker && format(' linked by {0}', matrix.linker) || '' }}${{ matrix.ar && format(' archived by {0}', matrix.ar) || '' }}
     if: inputs.rows != 'M64' && inputs.rows != 'W64'
     runs-on: ${{ matrix.row == 'LA64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
@@ -66,10 +66,11 @@ jobs:
         level: [-O0, -O2]
         system: [autoconf, meson]
         config: [minimal]
-        # Empty here so that an include naming a linker is a leg of its own. An include that only
-        # adds a key the matrix does not have is merged into every combination it matches instead,
-        # which made the plain -O2 legs the ones linked by mold and lld.
+        # Empty here so that an include naming a linker or an archiver is a leg of its own. An
+        # include that only adds a key the matrix does not have is merged into every combination
+        # it matches instead, which made the plain -O2 legs the ones linked by mold and lld.
         linker: ['']
+        ar: ['']
         include:
           - row: LA64
             level: -O0
@@ -120,6 +121,16 @@ jobs:
             level: -O2
             system: meson
             linker: lld
+          # And with rpg-ar as AR under both build systems, so that every static library and the
+          # index each link reads it through are written by rucc's archive writer.
+          - row: L64
+            level: -O2
+            system: autoconf
+            ar: rpg-ar
+          - row: L64
+            level: -O2
+            system: meson
+            ar: rpg-ar
     timeout-minutes: 240
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.20.0' }}
@@ -162,7 +173,7 @@ jobs:
       - name: rpg build
         run: |
           ./target/release/rpg build --pin "$PIN" --cc "$RUCC" --level ${{ matrix.level }} --system ${{ matrix.system }} --config ${{ matrix.config || 'minimal' }} \
-            ${{ matrix.linker && format('--linker {0}', matrix.linker) || '' }} --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
+            ${{ matrix.linker && format('--linker {0}', matrix.linker) || '' }} ${{ matrix.ar && format('--ar target/release/{0}', matrix.ar) || '' }} --out "$RUNNER_TEMP/pg" --jobs "$(nproc)"
       # What rpg triage reads afterwards: a core from any process that crashes, named with the
       # path of its executable so gdb can be given both, and server logs at debug1, which
       # TEMP_CONFIG reaches under autoconf and in every TAP script.
@@ -184,7 +195,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### $PIN world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }} with the ${{ matrix.config || 'minimal' }} configuration and rucc $RUCC_VERSION${{ matrix.linker && format(', linked by {0}', matrix.linker) || '' }}"
+            echo "### $PIN world on ${{ matrix.row }} under ${{ matrix.system }} at ${{ matrix.level }} with the ${{ matrix.config || 'minimal' }} configuration and rucc $RUCC_VERSION${{ matrix.linker && format(', linked by {0}', matrix.linker) || '' }}${{ matrix.ar && format(', archived by {0}', matrix.ar) || '' }}"
             echo
             grep '^world:' "$RUNNER_TEMP/world.txt" || echo "rpg test did not get as far as a count"
             echo
@@ -199,7 +210,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}${{ matrix.linker && format('-{0}', matrix.linker) || '' }}
+          name: rpg-world-${{ matrix.row }}-${{ env.PIN }}-${{ matrix.system }}${{ matrix.level }}${{ matrix.config == 'full' && '-full' || '' }}${{ matrix.linker && format('-{0}', matrix.linker) || '' }}${{ matrix.ar && format('-{0}', matrix.ar) || '' }}
           path: |
             ${{ runner.temp }}/pg/results/
             ${{ runner.temp }}/pg/triage.md
