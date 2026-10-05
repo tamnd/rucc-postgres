@@ -100,6 +100,15 @@ impl Sets {
     }
 }
 
+/// What meson's own timeout for each test is multiplied by. Postgres gives a TAP script 1000
+/// seconds, sized for the default `PG_TEST_TIMEOUT_DEFAULT` of 180, and meson kills a script that
+/// runs longer whatever the script itself would wait. A row or level given more time than 180
+/// gets the same share more from meson, so that a slow `-O0` build is not cut off partway.
+#[must_use]
+pub fn timeout_multiplier(timeout: u32) -> u32 {
+    timeout.div_ceil(180).max(1)
+}
+
 /// The suites `rpg test` knows how to run.
 pub const SUITES: &[&str] = &[
     "regress",
@@ -294,7 +303,8 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
             }
             // world is every suite but setup, run as upstream's CI runs it, a process per core.
             let jobs = plan.info.jobs.max(1).to_string();
-            let args = if plan.suite == "world" {
+            let multiplier = timeout_multiplier(plan.timeout).to_string();
+            let mut args = if plan.suite == "world" {
                 vec![
                     "test",
                     "--no-rebuild",
@@ -306,6 +316,7 @@ pub fn run(plan: &SuitePlan) -> Result<SuiteRun, String> {
             } else {
                 vec!["test", "--no-rebuild", "--suite", plan.suite.as_str()]
             };
+            args.extend(["--timeout-multiplier", &multiplier]);
             let label = format!("meson {}", args.join(" "));
             let mut step = Step::new(&label, "meson", &build_dir, &log("run"))
                 .args(args)
@@ -608,6 +619,15 @@ pub(crate) fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn meson_waits_as_much_longer_as_the_harness_does() {
+        assert_eq!(timeout_multiplier(180), 1);
+        assert_eq!(timeout_multiplier(60), 1);
+        assert_eq!(timeout_multiplier(300), 2);
+        assert_eq!(timeout_multiplier(360), 2);
+        assert_eq!(timeout_multiplier(600), 4);
+    }
 
     #[test]
     fn each_suite_runs_and_writes_where_its_makefile_does() {
