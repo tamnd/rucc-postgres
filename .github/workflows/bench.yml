@@ -18,7 +18,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.20.0"
+        default: "0.21.0"
       pin:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.20.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
       # A pull request only checks that every measure runs, so it takes small sizes.
       SIZES: ${{ github.event_name == 'pull_request' && '--runs 3 --seconds 20 --scale 10 --sf 0.1' || github.event_name == 'schedule' && '--runs 5 --seconds 30' || format('--runs {0}', inputs.runs || '10') }}
