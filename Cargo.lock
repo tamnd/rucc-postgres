@@ -165,14 +165,14 @@ dependencies = [
 
 [[package]]
 name = "rpg-ar"
-version = "0.4.3"
+version = "0.4.6"
 dependencies = [
  "rucc-archive",
 ]
 
 [[package]]
 name = "rpg-shim"
-version = "0.4.3"
+version = "0.4.6"
 dependencies = [
  "libc",
  "serde",
