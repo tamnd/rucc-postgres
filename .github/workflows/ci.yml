@@ -94,7 +94,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 60
     env:
-      RUCC_VERSION: "0.24.7"
+      RUCC_VERSION: "0.24.8"
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: Swatinem/rust-cache@v2.9.2
