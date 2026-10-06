@@ -19,7 +19,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.21.0"
+        default: "0.24.5"
       pin:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
@@ -143,7 +143,7 @@ jobs:
             config: services
     timeout-minutes: 240
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound${{ matrix.config == 'services' && ' ssl kerberos ldap oauth load_balance' || '' }}
       # pg_ctl gives a server 60 seconds to stop by default, and the xid_wraparound tests leave a
@@ -266,7 +266,7 @@ jobs:
             config: full
     timeout-minutes: 240
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
       # pg_ctl gives a server 60 seconds to stop by default, and the xid_wraparound tests leave a
@@ -392,7 +392,7 @@ jobs:
             config: full
     timeout-minutes: 330
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PG_TEST_EXTRA: wal_consistency_checking regress_dump_restore xid_wraparound
       PGCTLTIMEOUT: 180
@@ -549,7 +549,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 60
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -645,7 +645,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 90
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -704,7 +704,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       HOMEBREW_NO_AUTO_UPDATE: 1
       HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
@@ -773,7 +773,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       PLANTED: src/backend/utils/adt/int8.o
     steps:
@@ -857,7 +857,7 @@ jobs:
         level: [-O0, -O2]
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
       MINUTES: ${{ github.event_name == 'pull_request' && '4' || matrix.level == '-O2' && '60' || '20' }}
     steps:
@@ -920,7 +920,7 @@ jobs:
         system: [autoconf, meson]
     timeout-minutes: 30
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -990,7 +990,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ github.event.schedule == '41 4 * * 1' && 'REL_19_STABLE' || inputs.pin || 'REL_18_6' }}
     steps:
       - uses: actions/checkout@v7.0.1
