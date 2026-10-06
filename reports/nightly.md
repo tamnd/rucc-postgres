@@ -34,11 +34,11 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | LA64-REL_19_STABLE-full-autoconf-O2 | 2026-10-05 | rucc 0.20.0 | 1016 passed, 0 not, 0 skipped | first night |
 | LA64-REL_19_STABLE-minimal-autoconf-O0 | 2026-10-05 | rucc 0.20.0 | 984 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_19_STABLE-minimal-autoconf-O2 | 2026-10-05 | rucc 0.20.0 | 984 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-full-autoconf-O2 | 2026-10-04 | rucc 0.19.0 | 944 passed, 0 not, 0 skipped | first night |
-| M64-REL_18_6-minimal-autoconf-O0 | 2026-10-04 | rucc 0.19.0 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-autoconf-O2 | 2026-10-04 | rucc 0.19.0 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-meson-O0 | 2026-10-04 | rucc 0.19.0 | 910 passed, 1 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-meson-O2 | 2026-10-04 | rucc 0.19.0 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-full-autoconf-O2 | 2026-10-06 | rucc 0.24.5 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-autoconf-O0 | 2026-10-06 | rucc 0.24.5 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-autoconf-O2 | 2026-10-06 | rucc 0.24.5 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-meson-O0 | 2026-10-06 | rucc 0.24.5 | 911 passed, 0 not, 0 skipped | 0 worse, 1 better |
+| M64-REL_18_6-minimal-meson-O2 | 2026-10-06 | rucc 0.24.5 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_19_STABLE-full-autoconf-O2 | 2026-10-05 | rucc 0.20.0 | 1016 passed, 0 not, 0 skipped | first night |
 | M64-REL_19_STABLE-minimal-autoconf-O0 | 2026-10-05 | rucc 0.20.0 | 984 passed, 0 not, 0 skipped | first night |
 | M64-REL_19_STABLE-minimal-autoconf-O2 | 2026-10-05 | rucc 0.20.0 | 984 passed, 0 not, 0 skipped | first night |
@@ -53,6 +53,13 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | W64-REL_19_STABLE-full-meson-O2 | 2026-10-05 | rucc 0.20.0 | 1014 passed, 0 not, 0 skipped | first night |
 | W64-REL_19_STABLE-minimal-meson-O0 | 2026-10-05 | rucc 0.20.0 | 982 passed, 0 not, 0 skipped | first night |
 | W64-REL_19_STABLE-minimal-meson-O2 | 2026-10-05 | rucc 0.20.0 | 982 passed, 0 not, 0 skipped | first night |
+
+## M64-REL_18_6-minimal-meson-O0 on 2026-10-06
+
+Passing again:
+
+- `world/xid_wraparound/003_wraparounds`
+
 
 ## History
 
@@ -269,12 +276,14 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-06 | rucc 0.24.5 | 944 passed, 0 not, 0 skipped |
 | 2026-10-04 | rucc 0.19.0 | 944 passed, 0 not, 0 skipped |
 
 ### M64-REL_18_6-minimal-autoconf-O0
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-06 | rucc 0.24.5 | 913 passed, 0 not, 0 skipped |
 | 2026-10-04 | rucc 0.19.0 | 913 passed, 0 not, 0 skipped |
 | 2026-10-03 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped |
 | 2026-10-02 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped |
@@ -284,6 +293,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-06 | rucc 0.24.5 | 913 passed, 0 not, 0 skipped |
 | 2026-10-04 | rucc 0.19.0 | 913 passed, 0 not, 0 skipped |
 | 2026-10-03 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped |
 | 2026-10-02 | rucc 0.18.8 | 913 passed, 0 not, 0 skipped |
@@ -293,6 +303,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-06 | rucc 0.24.5 | 911 passed, 0 not, 0 skipped |
 | 2026-10-04 | rucc 0.19.0 | 910 passed, 1 not, 0 skipped |
 | 2026-10-03 | rucc 0.18.8 | did not build |
 | 2026-10-02 | rucc 0.18.8 | did not build |
@@ -301,6 +312,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-06 | rucc 0.24.5 | 911 passed, 0 not, 0 skipped |
 | 2026-10-04 | rucc 0.19.0 | 911 passed, 0 not, 0 skipped |
 | 2026-10-03 | rucc 0.18.8 | did not build |
 | 2026-10-02 | rucc 0.18.8 | did not build |
