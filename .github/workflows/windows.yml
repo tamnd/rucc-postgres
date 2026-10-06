@@ -27,7 +27,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.21.0"
+        default: "0.24.5"
       pin:
         description: pin from pins.toml, a release
         default: REL_18_6
@@ -65,7 +65,7 @@ jobs:
             linker: lld
     timeout-minutes: 120
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
     defaults:
       run:
@@ -188,7 +188,7 @@ jobs:
       matrix:
         cc: [rucc, gcc]
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: 0
@@ -325,7 +325,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 300
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.21.0' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.24.5' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
       CARGO_TERM_COLOR: always
       CARGO_INCREMENTAL: 0
