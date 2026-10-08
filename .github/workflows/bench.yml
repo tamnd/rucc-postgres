@@ -8,7 +8,8 @@
 # as the gcc one in runs/bench/, rewrites reports/bench.md, commits both to main, and opens an
 # issue labeled kind/perf when a measure got worse since the night before. The issue goes to
 # tamnd/rucc when the RUCC_ISSUES secret holds a token that can open issues there, and to this
-# repository otherwise, as the nightly workflow's does.
+# repository otherwise, as the nightly workflow's does. By hand it can also take a branch or
+# commit of tamnd/rucc, which it builds from source in place of the release.
 name: bench
 
 on:
@@ -19,6 +20,9 @@ on:
       rucc:
         description: rucc release to build with
         default: "0.24.8"
+      rucc_ref:
+        description: a branch or commit of tamnd/rucc to build from source and use instead of the release
+        default: ""
       pin:
         description: pin from pins.toml, a release or a branch
         default: REL_18_6
@@ -51,6 +55,7 @@ jobs:
     timeout-minutes: 330
     env:
       RUCC_VERSION: ${{ inputs.rucc || '0.24.8' }}
+      RUCC_REF: ${{ inputs.rucc_ref || '' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
       # A pull request only checks that every measure runs, so it takes small sizes.
       SIZES: ${{ github.event_name == 'pull_request' && '--runs 3 --seconds 20 --scale 10 --sf 0.1' || github.event_name == 'schedule' && '--runs 5 --seconds 30' || format('--runs {0}', inputs.runs || '10') }}
@@ -69,6 +74,7 @@ jobs:
           sudo sysctl -w kernel.perf_event_paranoid=1
           perf --version
       - name: install rucc
+        if: ${{ env.RUCC_REF == '' }}
         run: |
           set -euo pipefail
           name="rucc-v$RUCC_VERSION-x86_64-unknown-linux-gnu"
@@ -79,6 +85,21 @@ jobs:
           sha256sum -c "$name.tar.gz.sha256"
           tar xzf "$name.tar.gz"
           echo "RUCC=$RUNNER_TEMP/$name/rucc" >> "$GITHUB_ENV"
+      # A rucc that has not been released, so that a change on its main or on a branch can be
+      # measured before a release carries it. The runtime goes where the compiler looks for it in a
+      # build tree, and the server it builds lands in the same place a released one does.
+      - name: build rucc from source
+        if: ${{ env.RUCC_REF != '' }}
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none https://github.com/tamnd/rucc "$RUNNER_TEMP/rucc-src"
+          cd "$RUNNER_TEMP/rucc-src"
+          git checkout -q "$RUCC_REF"
+          git log -1 --format='building rucc at %h, %s'
+          cargo build --release --bin rucc
+          cargo xtask builtins --target x86_64-linux-gnu
+          ./target/release/rucc --version
+          echo "RUCC=$RUNNER_TEMP/rucc-src/target/release/rucc" >> "$GITHUB_ENV"
       - name: rpg fetch
         run: |
           cargo build --release --workspace
