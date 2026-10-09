@@ -69,7 +69,9 @@ jobs:
           sudo apt-get install -y libipc-run-perl
       - name: install perf
         run: |
-          sudo apt-get install -y linux-tools-common "linux-tools-$(uname -r)"
+          # The symbols for libc, without which every libc function but the exported ones is one
+          # line called [unknown] in the profile and the copies behind memcpy are not told apart.
+          sudo apt-get install -y linux-tools-common "linux-tools-$(uname -r)" libc6-dbg
           # Ubuntu keeps perf from users entirely, and rpg profile only asks for its own processes.
           sudo sysctl -w kernel.perf_event_paranoid=1
           perf --version
