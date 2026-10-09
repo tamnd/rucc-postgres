@@ -170,6 +170,15 @@ pub struct CompileSummary {
     pub unreadable_lines: usize,
     /// User CPU seconds summed over build calls.
     pub build_user_seconds: f64,
+    /// Of those, the seconds of calls that compiled to an object, with `-c`.
+    #[serde(default)]
+    pub compile_user_seconds: f64,
+    /// And of calls that linked, which for a compiler driver includes the linker it ran.
+    #[serde(default)]
+    pub link_user_seconds: f64,
+    /// The link with the most user seconds: what it wrote, and those seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slowest_link: Option<(String, f64)>,
     /// The largest peak resident set of any call, in KiB.
     pub peak_rss_kb: u64,
     /// The call that had it.
@@ -252,7 +261,23 @@ pub fn summarize(
             continue;
         }
         summary.build_calls += 1;
-        summary.build_user_seconds += record.user_seconds.unwrap_or(0.0);
+        let user = record.user_seconds.unwrap_or(0.0);
+        summary.build_user_seconds += user;
+        let rest = record.argv.get(1..).unwrap_or_default();
+        match args::read(rest, Path::new(&record.cwd), &|_| true).mode {
+            Mode::Compile => summary.compile_user_seconds += user,
+            Mode::Link => {
+                summary.link_user_seconds += user;
+                if summary
+                    .slowest_link
+                    .as_ref()
+                    .is_none_or(|(_, most)| user > *most)
+                {
+                    summary.slowest_link = Some((subject(record, roots), user));
+                }
+            }
+            _ => {}
+        }
         if !record.succeeded() {
             summary.build_failures += 1;
             if summary.first_failure.is_none() {
@@ -689,7 +714,7 @@ mod tests {
     const TRACE: &str = r#"{"started":10.0,"argv":["cc","-c","conftest.c"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"conftest.c","sha256":"a"}],"wall-seconds":0.01,"exit":1,"stderr":"conftest.c:1: error: no"}
 {"started":20.0,"argv":["cc","-Isrc/include","-c","../src/backend/parser/gram.c","-o","gram.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"../src/backend/parser/gram.c","sha256":"b"}],"outputs":[{"path":"gram.o","sha256":"c"}],"wall-seconds":9.5,"user-seconds":9.0,"peak-rss-kb":500000,"exit":0,"twice":{"identical":true}}
 {"started":21.0,"argv":["cc","-c","../src/x.c","-o","x.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"../src/x.c","sha256":"d"}],"outputs":[{"path":"x.o","sha256":"e"}],"wall-seconds":0.5,"user-seconds":0.4,"peak-rss-kb":1000,"exit":1,"stderr":"../src/x.c:3: error: expected\nmore"}
-{"started":22.0,"argv":["cc","-o","postgres","gram.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"gram.o","sha256":"c"}],"outputs":[{"path":"postgres","sha256":"f"}],"wall-seconds":1.0,"exit":0}
+{"started":22.0,"argv":["cc","-o","postgres","gram.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"gram.o","sha256":"c"}],"outputs":[{"path":"postgres","sha256":"f"}],"wall-seconds":1.0,"user-seconds":2.5,"exit":0}
 "#;
 
     #[test]
@@ -709,6 +734,10 @@ mod tests {
         assert_eq!(summary.slowest[0].0, "../src/backend/parser/gram.c");
         assert_eq!(summary.first_failure.as_ref().unwrap().0, "../src/x.c");
         assert_eq!(summary.nondeterministic, Some(0));
+        // The two compiles to an object, the failed one too, and the link apart from them.
+        assert!((summary.compile_user_seconds - 9.4).abs() < 1e-9);
+        assert!((summary.link_user_seconds - 2.5).abs() < 1e-9);
+        assert_eq!(summary.slowest_link, Some(("postgres".to_string(), 2.5)));
     }
 
     #[test]
