@@ -6,6 +6,7 @@ mod baseline;
 mod bench;
 mod benchnight;
 mod build;
+mod buildtime;
 mod cli;
 mod compiler;
 mod configdiff;
@@ -56,6 +57,7 @@ fn main() -> ExitCode {
             "bench" => bench_command(&repo, &args),
             "bench-compare" => bench_compare(&args),
             "bench-night" => bench_night(&repo, &args),
+            "build-compare" => build_compare(&args),
             "profile" => profile_command(&repo, &args),
             "profile-compare" => profile_compare(&args),
             "triage" => triage_command(&repo, &args),
@@ -468,6 +470,18 @@ fn bench_compare(args: &Args) -> Result<ExitCode, String> {
     let a = bench::Bench::load(Path::new(args.need("a")?))?;
     let b = bench::Bench::load(Path::new(args.need("b")?))?;
     let report = bench::compare(&a, &b);
+    if let Some(out) = args.get("out") {
+        std::fs::write(out, &report).map_err(|e| format!("writing {out}: {e}"))?;
+    }
+    print!("{report}");
+    Ok(ExitCode::SUCCESS)
+}
+
+fn build_compare(args: &Args) -> Result<ExitCode, String> {
+    let file = args.get("file").unwrap_or(buildtime::GRAM);
+    let a = buildtime::Timed::load(Path::new(args.need("a")?), file)?;
+    let b = buildtime::Timed::load(Path::new(args.need("b")?), file)?;
+    let report = buildtime::compare(&a, &b, file);
     if let Some(out) = args.get("out") {
         std::fs::write(out, &report).map_err(|e| format!("writing {out}: {e}"))?;
     }
