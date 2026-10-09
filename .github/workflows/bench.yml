@@ -136,6 +136,24 @@ jobs:
           ./target/release/rpg profile-compare --a "$RUNNER_TEMP/gcc" --b "$RUNNER_TEMP/rucc" \
             --out "$RUNNER_TEMP/profile.md"
           cat "$RUNNER_TEMP/profile.md" >> "$GITHUB_STEP_SUMMARY"
+      # The compile time targets are at -O0 as well as at -O2, so the tree is built again at -O0
+      # with both compilers only to be timed. Nothing runs against those builds.
+      - name: build with gcc and with rucc at -O0
+        if: ${{ !cancelled() }}
+        run: |
+          for cc in gcc "$RUCC"; do
+            name=$(basename "$cc")
+            ./target/release/rpg build --pin "$PIN" --cc "$cc" --level -O0 --system autoconf --config minimal \
+              --out "$RUNNER_TEMP/$name-O0" --jobs "$(nproc)"
+          done
+      - name: compare the builds
+        if: ${{ !cancelled() }}
+        run: |
+          ./target/release/rpg build-compare --a "$RUNNER_TEMP/gcc" --b "$RUNNER_TEMP/rucc" \
+            --out "$RUNNER_TEMP/build-O2.md"
+          ./target/release/rpg build-compare --a "$RUNNER_TEMP/gcc-O0" --b "$RUNNER_TEMP/rucc-O0" \
+            --out "$RUNNER_TEMP/build-O0.md"
+          { cat "$RUNNER_TEMP/build-O2.md"; echo; cat "$RUNNER_TEMP/build-O0.md"; } >> "$GITHUB_STEP_SUMMARY"
       - name: keep the runs
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -144,6 +162,8 @@ jobs:
           path: |
             ${{ runner.temp }}/compare.md
             ${{ runner.temp }}/profile.md
+            ${{ runner.temp }}/build-O2.md
+            ${{ runner.temp }}/build-O0.md
             ${{ runner.temp }}/gcc/profile/profile.json
             ${{ runner.temp }}/rucc/profile/profile.json
             ${{ runner.temp }}/gcc/bench/
