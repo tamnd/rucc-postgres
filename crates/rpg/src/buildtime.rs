@@ -76,6 +76,50 @@ fn mib(kb: u64) -> f64 {
     u32::try_from(kb).map_or(f64::INFINITY, f64::from) / 1024.0
 }
 
+/// The rows for the compiler's user time: the whole of it, then what compiling and linking took.
+fn user_rows(text: &mut String, a: &BuildInfo, b: &BuildInfo) {
+    // A build recorded before the split was kept has no compile or link seconds, so those rows
+    // are only written when both sides have them.
+    let split =
+        |x: &BuildInfo| x.compiles.compile_user_seconds + x.compiles.link_user_seconds > 0.0;
+    let users: [(&str, fn(&BuildInfo) -> f64); 3] = [
+        ("compiler user time", |x| x.compiles.build_user_seconds),
+        ("of which compiling to objects", |x| {
+            x.compiles.compile_user_seconds
+        }),
+        ("of which linking", |x| x.compiles.link_user_seconds),
+    ];
+    for (i, (name, user)) in users.into_iter().enumerate() {
+        if i > 0 && !(split(a) && split(b)) {
+            break;
+        }
+        let (user_a, user_b) = (user(a), user(b));
+        let _ = writeln!(
+            text,
+            "| {name} | {user_a:.1} s | {user_b:.1} s | {} |",
+            faster(user_a, user_b)
+        );
+    }
+    let link = |x: &BuildInfo| {
+        x.compiles.slowest_link.as_ref().map_or_else(
+            || "none".to_string(),
+            |(file, user)| format!("{user:.2} s for `{file}`"),
+        )
+    };
+    if a.compiles.slowest_link.is_some() || b.compiles.slowest_link.is_some() {
+        let _ = writeln!(
+            text,
+            "| slowest link, user time | {} | {} | {} |",
+            link(a),
+            link(b),
+            match (&a.compiles.slowest_link, &b.compiles.slowest_link) {
+                (Some((_, x)), Some((_, y))) => faster(*x, *y),
+                _ => String::new(),
+            }
+        );
+    }
+}
+
 /// The comparison of two builds as a Markdown report.
 #[must_use]
 pub fn compare(a: &Timed, b: &Timed, file: &str) -> String {
@@ -115,15 +159,7 @@ pub fn compare(a: &Timed, b: &Timed, file: &str) -> String {
         seconds(wall_b),
         both(wall_a, wall_b)
     );
-    let (user_a, user_b) = (
-        a.info.compiles.build_user_seconds,
-        b.info.compiles.build_user_seconds,
-    );
-    let _ = writeln!(
-        text,
-        "| compiler user time | {user_a:.1} s | {user_b:.1} s | {} |",
-        faster(user_a, user_b)
-    );
+    user_rows(&mut text, &a.info, &b.info);
     let one = |x: Option<(f64, f64)>| {
         x.map_or_else(
             || "not compiled".to_string(),
@@ -203,14 +239,19 @@ mod tests {
 
     #[test]
     fn the_report_says_how_many_times_as_fast_and_as_much() {
-        let a = Timed {
+        let mut a = Timed {
             info: info("gcc 13.3.0", Some(84.5), 262.1, 207_872, 4),
             file: Some((3.0, 3.25)),
         };
-        let b = Timed {
+        let mut b = Timed {
             info: info("rucc 0.29.3", Some(34.2), 95.1, 153_600, 4),
             file: Some((6.0, 6.5)),
         };
+        for (x, compile, link, slowest) in [(&mut a, 200.0, 50.0, 4.0), (&mut b, 40.0, 50.0, 8.0)] {
+            x.info.compiles.compile_user_seconds = compile;
+            x.info.compiles.link_user_seconds = link;
+            x.info.compiles.slowest_link = Some(("src/backend/postgres".to_string(), slowest));
+        }
         let text = compare(&a, &b, GRAM);
         assert!(
             text.starts_with("# rucc 0.29.3 against gcc 13.3.0\n"),
@@ -231,6 +272,23 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("| 0.74 times as much |"), "{text}");
+        assert!(
+            text.contains(
+                "| of which compiling to objects | 200.0 s | 40.0 s | 5.00 times as fast |"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("| of which linking | 50.0 s | 50.0 s | 1.00 times as fast |"),
+            "{text}"
+        );
+        assert!(
+            text.contains(
+                "| slowest link, user time | 4.00 s for `src/backend/postgres` | \
+                 8.00 s for `src/backend/postgres` | 2.00 times as slow |"
+            ),
+            "{text}"
+        );
     }
 
     #[test]
@@ -256,5 +314,8 @@ mod tests {
             text.contains("| not compiled | 1.00 s (1.00 s wall) |  |"),
             "{text}"
         );
+        // Neither build says how its user time split, as one recorded before the split would not.
+        assert!(!text.contains("of which"), "{text}");
+        assert!(!text.contains("slowest link"), "{text}");
     }
 }
