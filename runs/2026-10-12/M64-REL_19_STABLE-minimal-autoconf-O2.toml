@@ -1,0 +1,14 @@
+date = "2026-10-12"
+row = "M64"
+pin = "REL_19_STABLE"
+commit = "1a1248818fb8b8b0353c292c632d6a6af77e8209"
+config = "minimal"
+system = "autoconf"
+level = "-O2"
+compiler = "rucc 0.24.8"
+host = "sjc22-be111-d47623c7-c2c8-4dd3-a08a-ba3e79ecd2d6-A20FB04DD2C2"
+built = true
+failing = []
+
+[counts]
+passed = 986
