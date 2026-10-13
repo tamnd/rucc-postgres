@@ -19,7 +19,7 @@ on:
     inputs:
       rucc:
         description: rucc release to build with
-        default: "0.24.8"
+        default: "0.30.1"
       rucc_ref:
         description: a branch or commit of tamnd/rucc to build from source and use instead of the release
         default: ""
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     env:
-      RUCC_VERSION: ${{ inputs.rucc || '0.24.8' }}
+      RUCC_VERSION: ${{ inputs.rucc || '0.30.1' }}
       RUCC_REF: ${{ inputs.rucc_ref || '' }}
       PIN: ${{ inputs.pin || 'REL_18_6' }}
       # A pull request only checks that every measure runs, so it takes small sizes.
