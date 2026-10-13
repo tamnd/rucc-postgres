@@ -30,7 +30,9 @@ env:
 jobs:
   quick:
     name: format, lints and house style
-    runs-on: ubuntu-24.04
+    # On arm64, where runners are easier to get: the x86-64 queue is shared with rucc's CI, and
+    # every other job waits for this one.
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: Swatinem/rust-cache@v2.9.2
