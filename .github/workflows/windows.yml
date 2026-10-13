@@ -108,8 +108,8 @@ jobs:
           name="rucc-v$RUCC_VERSION-x86_64-pc-windows-msvc"
           cd "$RUNNER_TEMP"
           base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
-          curl -fsSLO "$base/$name.zip"
-          curl -fsSLO "$base/$name.zip.sha256"
+          curl -fsSLO --retry 5 --retry-all-errors "$base/$name.zip"
+          curl -fsSLO --retry 5 --retry-all-errors "$base/$name.zip.sha256"
           sha256sum -c "$name.zip.sha256"
           unzip -q "$name.zip"
           "$RUNNER_TEMP/$name/rucc.exe" --version
@@ -124,7 +124,7 @@ jobs:
             exit 1
           fi
           cd "$RUNNER_TEMP"
-          curl -fsSL -o pg.tar.bz2 "$url"
+          curl -fsSL --retry 5 --retry-all-errors -o pg.tar.bz2 "$url"
           echo "$sha  pg.tar.bz2" | sha256sum -c
           mkdir src
           tar xjf pg.tar.bz2 -C src --strip-components=1
@@ -234,8 +234,8 @@ jobs:
           name="rucc-v$RUCC_VERSION-x86_64-pc-windows-msvc"
           cd "$RUNNER_TEMP"
           base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
-          curl -fsSLO "$base/$name.zip"
-          curl -fsSLO "$base/$name.zip.sha256"
+          curl -fsSLO --retry 5 --retry-all-errors "$base/$name.zip"
+          curl -fsSLO --retry 5 --retry-all-errors "$base/$name.zip.sha256"
           sha256sum -c "$name.zip.sha256"
           unzip -q "$name.zip"
           cc="$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe") --target=x86_64-windows-gnu"
@@ -253,7 +253,7 @@ jobs:
         run: |
           set -euo pipefail
           lib="$(cygpath -m "$HOME/perl5")"
-          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
+          curl -fsSL --retry 5 --retry-all-errors https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
           echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
       # rpg runs tar by name, and on Windows that finds the bsdtar in System32 before MSYS2's, which
       # sat on this archive until the step timed out. MSYS2's curl and tar fill rpg's cache instead,
@@ -268,7 +268,7 @@ jobs:
           url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
           unix="$(cygpath -u "$RUNNER_TEMP/rpg-cache")"
           mkdir -p "$unix/archives" "$unix/src/$PIN"
-          curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
+          curl -fsSL --retry 5 --retry-all-errors --max-time 600 -o "$unix/archives/${url##*/}" "$url"
           tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
       # Meson takes the first tar on PATH, and MSYS2's reads the D: in a Windows path as a remote
@@ -366,8 +366,8 @@ jobs:
           name="rucc-v$RUCC_VERSION-x86_64-pc-windows-msvc"
           cd "$RUNNER_TEMP"
           base="https://github.com/tamnd/rucc/releases/download/v$RUCC_VERSION"
-          curl -fsSLO "$base/$name.zip"
-          curl -fsSLO "$base/$name.zip.sha256"
+          curl -fsSLO --retry 5 --retry-all-errors "$base/$name.zip"
+          curl -fsSLO --retry 5 --retry-all-errors "$base/$name.zip.sha256"
           sha256sum -c "$name.zip.sha256"
           unzip -q "$name.zip"
           cc="$(cygpath -m "$RUNNER_TEMP/$name/rucc.exe") --target=x86_64-windows-gnu"
@@ -378,7 +378,7 @@ jobs:
         run: |
           set -euo pipefail
           lib="$(cygpath -m "$HOME/perl5")"
-          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
+          curl -fsSL --retry 5 --retry-all-errors https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
           echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
       - name: rpg fetch
         timeout-minutes: 20
@@ -390,7 +390,7 @@ jobs:
           url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
           unix="$(cygpath -u "$RUNNER_TEMP/rpg-cache")"
           mkdir -p "$unix/archives" "$unix/src/$PIN"
-          curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
+          curl -fsSL --retry 5 --retry-all-errors --max-time 600 -o "$unix/archives/${url##*/}" "$url"
           tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
       - name: rpg build with both

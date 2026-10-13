@@ -68,7 +68,7 @@ jobs:
           brew install bison flex make meson ninja
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
-          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$HOME/perl5" IPC::Run
+          curl -fsSL --retry 5 --retry-all-errors https://cpanmin.us | perl - --notest --local-lib="$HOME/perl5" IPC::Run
           echo "PERL5LIB=$HOME/perl5/lib/perl5" >> "$GITHUB_ENV"
           echo "CC_REF=clang" >> "$GITHUB_ENV"
       - name: install the libraries the full configuration links on macOS
@@ -153,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           lib="$(cygpath -m "$HOME/perl5")"
-          curl -fsSL https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
+          curl -fsSL --retry 5 --retry-all-errors https://cpanmin.us | perl - --notest --local-lib="$lib" IPC::Run@20231003.0
           echo "PERL5LIB=$lib/lib/perl5" >> "$GITHUB_ENV"
       # MSYS2's curl and tar fill rpg's cache, since the tar rpg would find is System32's.
       - name: rpg fetch
@@ -166,7 +166,7 @@ jobs:
           url=$(sed -n "/^name = \"$PIN\"/,/^\$/s/^url = \"\(.*\)\"/\1/p" pins.toml)
           unix="$(cygpath -u "$RUNNER_TEMP/rpg-cache")"
           mkdir -p "$unix/archives" "$unix/src/$PIN"
-          curl -fsSL --max-time 600 -o "$unix/archives/${url##*/}" "$url"
+          curl -fsSL --retry 5 --retry-all-errors --max-time 600 -o "$unix/archives/${url##*/}" "$url"
           tar -xf "$unix/archives/${url##*/}" -C "$unix/src/$PIN" --strip-components=1
           ./target/release/rpg.exe fetch --pin "$PIN" --no-upstream-check
       - name: rpg baseline
