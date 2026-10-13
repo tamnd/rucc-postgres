@@ -1,0 +1,14 @@
+date = "2026-10-13"
+row = "M64"
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+config = "minimal"
+system = "autoconf"
+level = "-O0"
+compiler = "rucc 0.24.8"
+host = "sjc20-cw712-c24bc4c8-2397-4284-bcdd-8b1e47cf7bbe-0A27F8C8C45A"
+built = true
+failing = []
+
+[counts]
+passed = 913
