@@ -126,6 +126,36 @@ fn user_rows(text: &mut String, a: &BuildInfo, b: &BuildInfo) {
     }
 }
 
+/// Where rucc's time went in each build, a row for each phase, when either build traced it.
+fn phase_rows(text: &mut String, a: &BuildInfo, b: &BuildInfo) {
+    let (x, y) = (&a.compiles.phases, &b.compiles.phases);
+    if x.is_empty() && y.is_empty() {
+        return;
+    }
+    text.push_str(
+        "\nWhere rucc's time went, each phase in seconds summed over the build's compiles:\n\n\
+         | phase | a | b |\n|---|---|---|\n",
+    );
+    let mut names: Vec<&str> = Vec::new();
+    for (name, _) in y.iter().chain(x) {
+        if !names.contains(&name.as_str()) {
+            names.push(name);
+        }
+    }
+    let cell = |phases: &[(String, f64)], name: &str| {
+        let total: f64 = phases.iter().map(|(_, seconds)| seconds).sum();
+        phases
+            .iter()
+            .find(|(phase, _)| phase == name)
+            .map_or_else(String::new, |(_, seconds)| {
+                format!("{seconds:.1} s ({:.0}%)", 100.0 * seconds / total)
+            })
+    };
+    for name in names {
+        let _ = writeln!(text, "| {name} | {} | {} |", cell(x, name), cell(y, name));
+    }
+}
+
 /// The comparison of two builds as a Markdown report.
 #[must_use]
 pub fn compare(a: &Timed, b: &Timed, file: &str) -> String {
@@ -201,6 +231,7 @@ pub fn compare(a: &Timed, b: &Timed, file: &str) -> String {
         largest(&a.info),
         largest(&b.info)
     );
+    phase_rows(&mut text, &a.info, &b.info);
     text
 }
 
@@ -258,6 +289,10 @@ mod tests {
             x.info.compiles.link_user_seconds = link;
             x.info.compiles.slowest_link = Some(("src/backend/postgres".to_string(), slowest));
         }
+        b.info.compiles.phases = vec![
+            ("preprocess".to_string(), 30.0),
+            ("generate".to_string(), 10.0),
+        ];
         let text = compare(&a, &b, GRAM);
         assert!(
             text.starts_with("# rucc 0.29.3 against gcc 13.3.0\n"),
@@ -295,6 +330,12 @@ mod tests {
             ),
             "{text}"
         );
+        // gcc writes no trace, so only b has phases, each with its share of b's time.
+        assert!(
+            text.contains("| phase | a | b |\n|---|---|---|\n| preprocess |  | 30.0 s (75%) |\n"),
+            "{text}"
+        );
+        assert!(text.ends_with("| generate |  | 10.0 s (25%) |\n"), "{text}");
     }
 
     #[test]
@@ -323,5 +364,6 @@ mod tests {
         // Neither build says how its user time split, as one recorded before the split would not.
         assert!(!text.contains("of which"), "{text}");
         assert!(!text.contains("slowest link"), "{text}");
+        assert!(!text.contains("Where rucc's time went"), "{text}");
     }
 }

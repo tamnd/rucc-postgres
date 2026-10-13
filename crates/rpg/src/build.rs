@@ -179,6 +179,10 @@ pub struct CompileSummary {
     /// The link with the most user seconds: what it wrote, and those seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slowest_link: Option<(String, f64)>,
+    /// Where rucc's time went, from the traces of build calls: each phase with its seconds summed
+    /// over every compile, most first. Empty for a compiler that writes no trace.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub phases: Vec<(String, f64)>,
     /// The largest peak resident set of any call, in KiB.
     pub peak_rss_kb: u64,
     /// The call that had it.
@@ -216,6 +220,21 @@ fn subject(record: &CompileRecord, roots: &[&Path]) -> String {
         .iter()
         .find_map(|root| full.strip_prefix(root).ok())
         .map_or(path, |p| p.display().to_string())
+}
+
+/// Add the phases of the traces rucc wrote for one call to `phases`.
+fn add_phases(phases: &mut Vec<(String, f64)>, record: &CompileRecord) {
+    let traced = record
+        .rucc
+        .iter()
+        .filter_map(|trace| trace.get("phases")?.as_object());
+    for (phase, seconds) in traced.flatten() {
+        let seconds = seconds.as_f64().unwrap_or(0.0);
+        match phases.iter_mut().find(|(name, _)| name == phase) {
+            Some((_, total)) => *total += seconds,
+            None => phases.push((phase.clone(), seconds)),
+        }
+    }
 }
 
 /// Remove `.` and `..` from a path without asking the file system.
@@ -288,6 +307,7 @@ pub fn summarize(
             summary.build_compiles += 1;
             compiles.push((subject(record, roots), record.wall_seconds));
         }
+        add_phases(&mut summary.phases, record);
         if let Some(twice) = &record.twice {
             checked = true;
             nondeterministic += usize::from(!twice.identical);
@@ -295,6 +315,7 @@ pub fn summarize(
     }
     compiles.sort_by(|a, b| b.1.total_cmp(&a.1));
     compiles.truncate(10);
+    summary.phases.sort_by(|a, b| b.1.total_cmp(&a.1));
     summary.slowest = compiles;
     summary.nondeterministic = checked.then_some(nondeterministic);
     summary
@@ -711,9 +732,9 @@ mod tests {
     use super::*;
     use rpg_shim::record::parse_log;
 
-    const TRACE: &str = r#"{"started":10.0,"argv":["cc","-c","conftest.c"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"conftest.c","sha256":"a"}],"wall-seconds":0.01,"exit":1,"stderr":"conftest.c:1: error: no"}
-{"started":20.0,"argv":["cc","-Isrc/include","-c","../src/backend/parser/gram.c","-o","gram.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"../src/backend/parser/gram.c","sha256":"b"}],"outputs":[{"path":"gram.o","sha256":"c"}],"wall-seconds":9.5,"user-seconds":9.0,"peak-rss-kb":500000,"exit":0,"twice":{"identical":true}}
-{"started":21.0,"argv":["cc","-c","../src/x.c","-o","x.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"../src/x.c","sha256":"d"}],"outputs":[{"path":"x.o","sha256":"e"}],"wall-seconds":0.5,"user-seconds":0.4,"peak-rss-kb":1000,"exit":1,"stderr":"../src/x.c:3: error: expected\nmore"}
+    const TRACE: &str = r#"{"started":10.0,"argv":["cc","-c","conftest.c"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"conftest.c","sha256":"a"}],"wall-seconds":0.01,"exit":1,"stderr":"conftest.c:1: error: no","rucc":[{"phases":{"preprocess":100.0}}]}
+{"started":20.0,"argv":["cc","-Isrc/include","-c","../src/backend/parser/gram.c","-o","gram.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"../src/backend/parser/gram.c","sha256":"b"}],"outputs":[{"path":"gram.o","sha256":"c"}],"wall-seconds":9.5,"user-seconds":9.0,"peak-rss-kb":500000,"exit":0,"twice":{"identical":true},"rucc":[{"phases":{"preprocess":1.5,"generate":2.0}}]}
+{"started":21.0,"argv":["cc","-c","../src/x.c","-o","x.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"../src/x.c","sha256":"d"}],"outputs":[{"path":"x.o","sha256":"e"}],"wall-seconds":0.5,"user-seconds":0.4,"peak-rss-kb":1000,"exit":1,"stderr":"../src/x.c:3: error: expected\nmore","rucc":[{"phases":{"preprocess":0.25}}]}
 {"started":22.0,"argv":["cc","-o","postgres","gram.o"],"compiler":"/usr/bin/gcc-16","cwd":"/b/build","inputs":[{"path":"gram.o","sha256":"c"}],"outputs":[{"path":"postgres","sha256":"f"}],"wall-seconds":1.0,"user-seconds":2.5,"exit":0}
 "#;
 
@@ -738,6 +759,14 @@ mod tests {
         assert!((summary.compile_user_seconds - 9.4).abs() < 1e-9);
         assert!((summary.link_user_seconds - 2.5).abs() < 1e-9);
         assert_eq!(summary.slowest_link, Some(("postgres".to_string(), 2.5)));
+        // The phases of the build calls, the failed one too, but not of the probe.
+        assert_eq!(
+            summary.phases,
+            [
+                ("generate".to_string(), 2.0),
+                ("preprocess".to_string(), 1.75)
+            ]
+        );
     }
 
     #[test]
