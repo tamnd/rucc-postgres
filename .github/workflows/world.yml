@@ -612,9 +612,11 @@ jobs:
           for a in $(cd a-pg/build && find src contrib -name '*.so' -o -type f -perm -u+x -name 'pg*' -o -type f -name postgres | sort); do
             b="b-pg/build/$a"
             [ -f "$b" ] || continue
-            # Scripts are named pg* too, and strip refuses anything that is not an object.
-            strip --strip-debug -o one "a-pg/build/$a" 2>/dev/null || continue
-            strip --strip-debug -o two "$b"
+            # Scripts are named pg* too, and strip refuses anything that is not an object. The
+            # build ID is a hash the linker takes over the debug information as well, which names the
+            # flags of each compile, so it goes with the debug information.
+            strip --strip-debug -R .note.gnu.build-id -o one "a-pg/build/$a" 2>/dev/null || continue
+            strip --strip-debug -R .note.gnu.build-id -o two "$b"
             swap one
             cmp -s one two && continue
             if [ "$(size -A one | tail -n +3)" = "$(size -A two | tail -n +3)" ] \
