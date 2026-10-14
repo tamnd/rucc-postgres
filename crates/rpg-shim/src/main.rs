@@ -69,7 +69,10 @@ fn main() -> ExitCode {
         && matches!(invocation.mode, Mode::Compile | Mode::Assemble)
         && !outputs.is_empty()
     {
-        twice = Some(compile_again(&config, rest, &cwd, &outputs));
+        twice = Some(compile_again(&config, rest, &added, &cwd, &outputs));
+        if let Some(path) = &trace_file {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     let record = CompileRecord {
@@ -182,8 +185,18 @@ fn signal_of(_status: std::process::ExitStatus) -> Option<i32> {
 }
 
 /// Compile again, quietly, and compare every output with the first compile's.
-fn compile_again(config: &ShimConfig, args: &[String], cwd: &Path, first: &[FileDigest]) -> Twice {
-    let ran = run(&config.real, &config.args, args, &[], false);
+///
+/// The second compile gets the flags the shim added to the first, the trace included, because a
+/// compiler that records its flags in the debug information, as gcc and rucc both do, writes the
+/// trace file's name into the object, and a second compile without it would differ for that alone.
+fn compile_again(
+    config: &ShimConfig,
+    args: &[String],
+    added: &[String],
+    cwd: &Path,
+    first: &[FileDigest],
+) -> Twice {
+    let ran = run(&config.real, &config.args, args, added, false);
     if !matches!(ran, Ok(Run { exit: Some(0), .. })) {
         return Twice {
             identical: false,

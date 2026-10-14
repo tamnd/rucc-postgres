@@ -815,8 +815,11 @@ jobs:
       - name: rpg mixed on a planted fault
         run: |
           set -o pipefail
+          # The code is what matters, so the objects are compared without their debug information,
+          # where the producer names the flags each one was built with.
+          objcopy --strip-debug "$RUNNER_TEMP/rucc/build/$PLANTED" "$RUNNER_TEMP/planted-rucc.o"
           ./target/release/rpg mixed --gcc "$RUNNER_TEMP/gcc" --rucc "$RUNNER_TEMP/rucc" \
-            --check "! cmp -s \"\$RPG_BUILD/$PLANTED\" \"$RUNNER_TEMP/rucc/build/$PLANTED\"" \
+            --check "objcopy --strip-debug \"\$RPG_BUILD/$PLANTED\" \"$RUNNER_TEMP/planted.o\" && ! cmp -s \"$RUNNER_TEMP/planted.o\" \"$RUNNER_TEMP/planted-rucc.o\"" \
             --out "$RUNNER_TEMP/mixed-planted" | tee "$RUNNER_TEMP/mixed-planted.txt"
           grep -q "^object: *$PLANTED from" "$RUNNER_TEMP/mixed-planted.txt"
           grep -q '^fuel: *transformation' "$RUNNER_TEMP/mixed-planted.txt"
