@@ -126,10 +126,10 @@ jobs:
           cat "$RUNNER_TEMP/compare.md" >> "$GITHUB_STEP_SUMMARY"
       - name: profile the gcc server
         if: ${{ !cancelled() }}
-        run: ./target/release/rpg profile --out "$RUNNER_TEMP/gcc" $PROFILE_SIZES
+        run: ./target/release/rpg profile --out "$RUNNER_TEMP/gcc" --callers $PROFILE_SIZES
       - name: profile the rucc server
         if: ${{ !cancelled() }}
-        run: ./target/release/rpg profile --out "$RUNNER_TEMP/rucc" $PROFILE_SIZES
+        run: ./target/release/rpg profile --out "$RUNNER_TEMP/rucc" --callers $PROFILE_SIZES
       - name: compare the profiles
         if: ${{ !cancelled() }}
         run: |

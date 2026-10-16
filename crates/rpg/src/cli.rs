@@ -22,6 +22,7 @@ const SWITCHES: &[&str] = &[
     "configure-only",
     "no-upstream-check",
     "no-fuel",
+    "callers",
     "help",
 ];
 
@@ -79,6 +80,7 @@ fn accepted(command: &str) -> Option<&'static [&'static str]> {
             "scale",
             "sf",
             "event",
+            "callers",
         ],
         "profile-compare" => &["a", "b", "top", "out"],
         "triage" => &["out", "cores", "reports", "since"],
@@ -121,7 +123,7 @@ usage:
   rpg bench-night --gcc DIR --rucc DIR [--runs DIR] [--reports DIR] [--threshold 10] [--issue FILE]
                   [--run-url URL]
   rpg profile [--out DIR] [--row ROW] [--loads select-only,tpcb-like,analytic] [--clients N]
-              [--transactions 20000] [--scale 100] [--sf 1] [--event E] [--records FILE]
+              [--transactions 20000] [--scale 100] [--sf 1] [--event E] [--callers] [--records FILE]
   rpg profile-compare --a FILE --b FILE [--top 40] [--out FILE]
 
 The repository is found by walking up to pins.toml, or from RPG_ROOT. Downloads and unpacked

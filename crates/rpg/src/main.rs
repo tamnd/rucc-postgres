@@ -558,6 +558,7 @@ fn profile_command(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
         scale: args.number("scale", 100)?,
         scale_factor: args.number("sf", 1.0)?,
         event: args.get("event").map(str::to_string),
+        callers: args.has("callers"),
     };
     let result = profile::run(&plan)?;
     let path = args
