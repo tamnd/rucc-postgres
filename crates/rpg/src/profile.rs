@@ -45,6 +45,9 @@ pub struct ProfilePlan {
     pub scale_factor: f64,
     /// The perf event, or `None` to take cycles when the machine counts them.
     pub event: Option<String>,
+    /// Whether to record call chains and charge the samples taken in a shared library to the
+    /// server function that called into it.
+    pub callers: bool,
 }
 
 /// The cycles one function took.
@@ -56,6 +59,21 @@ pub struct Function {
     /// The object it lives in, like `postgres` or `libc.so.6`.
     pub object: String,
     /// The event count of the samples taken in it.
+    pub count: u64,
+}
+
+/// The samples one shared library function took when one server function called it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Call {
+    /// The library function, without a clone suffix.
+    pub symbol: String,
+    /// The library, like `libc.so.6`.
+    pub object: String,
+    /// The first function up the chain that is not in the library, or `[unknown]` when the
+    /// chain stopped before one.
+    pub caller: String,
+    /// The event count of the samples.
     pub count: u64,
 }
 
@@ -74,6 +92,9 @@ pub struct Load {
     /// Why the load stopped short, when it did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<String>,
+    /// The time in shared libraries by caller, the largest count first, when `--callers` asked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub calls: Vec<Call>,
 }
 
 /// `profile.json`: what was profiled, on what, and the counts.
@@ -133,8 +154,9 @@ impl Profile {
     }
 }
 
-/// The symbol a clone was made from: `foo` for `foo.isra.0`, `foo.part.1` or `foo.cold`. C
-/// names have no dots, so everything from the first one on is the compiler's. A name that starts
+/// The symbol a clone was made from: `foo` for `foo.isra.0`, `foo.part.1` or `foo.cold`, and
+/// `foo` for a versioned `foo@@GLIBC_2.34` too. C names have no dots and no at signs, so
+/// everything from the first one on is the compiler's or the linker's. A name that starts
 /// with a dot, like a local label an assembler left in the symbol table, is kept whole, since
 /// samples perf puts there belong to whatever function the label sits in and the name is the
 /// only clue to which.
@@ -142,7 +164,7 @@ fn base_symbol(symbol: &str) -> &str {
     if symbol.starts_with(['[', '.']) || symbol.starts_with("0x") {
         return symbol;
     }
-    symbol.split('.').next().unwrap_or(symbol)
+    symbol.split(['.', '@']).next().unwrap_or(symbol)
 }
 
 /// Read `perf report` output made with `-F period,dso,sym` and a tab between the fields. A
@@ -172,10 +194,9 @@ fn read_report(text: &str) -> Vec<Function> {
         } else {
             base_symbol(symbol)
         };
-        let object = Path::new(object)
-            .file_name()
-            .map_or(object.to_string(), |n| n.to_string_lossy().into_owned());
-        *counts.entry((symbol.to_string(), object)).or_default() += count;
+        *counts
+            .entry((symbol.to_string(), object_name(object)))
+            .or_default() += count;
     }
     let mut functions: Vec<Function> = counts
         .into_iter()
@@ -187,6 +208,83 @@ fn read_report(text: &str) -> Vec<Function> {
         .collect();
     functions.sort_by(|x, y| y.count.cmp(&x.count).then_with(|| x.symbol.cmp(&y.symbol)));
     functions
+}
+
+/// The file name of an object perf printed as a path.
+fn object_name(object: &str) -> String {
+    Path::new(object)
+        .file_name()
+        .map_or(object.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+/// One frame of a `perf script` call chain made with `-F period,ip,sym,dso`, which perf prints
+/// as the address, the symbol and the object in parentheses: the symbol and the object.
+fn frame(line: &str) -> Option<(&str, String)> {
+    let (address, rest) = line.trim().split_once(' ')?;
+    if !address.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let (symbol, object) = rest.trim_end().strip_suffix(')')?.rsplit_once(" (")?;
+    let symbol = symbol.trim();
+    let symbol = if symbol.is_empty() || symbol.starts_with("0x") {
+        "[unknown]"
+    } else {
+        base_symbol(symbol)
+    };
+    Some((symbol, object_name(object)))
+}
+
+/// Whether an object is a library of the system, like `libc.so.6`, rather than the server or one
+/// of its modules, which have no version after the `.so`.
+fn system_library(object: &str) -> bool {
+    object.contains(".so.")
+}
+
+/// Read `perf script` output made with `-F period,ip,sym,dso` from a recording with call chains,
+/// and charge each sample taken in a library of the system to the first function up its chain
+/// that is in neither that library nor another one, so `_int_free` is charged to whoever called
+/// `free` and not to `free`. A sample is its period on a line of its own and then its frames, the
+/// innermost first, and a blank line ends it.
+fn read_calls(text: &str) -> Vec<Call> {
+    let mut counts: BTreeMap<(String, String, String), u64> = BTreeMap::new();
+    let mut period = 0;
+    let mut frames: Vec<(&str, String)> = Vec::new();
+    let mut lines = text.lines().peekable();
+    while let Some(line) = lines.next() {
+        if let Ok(count) = line.trim().parse::<u64>() {
+            period = count;
+            frames.clear();
+        } else if let Some(f) = frame(line) {
+            frames.push(f);
+        }
+        let end = lines
+            .peek()
+            .is_none_or(|next| next.trim().is_empty() || next.trim().parse::<u64>().is_ok());
+        if !end || frames.is_empty() {
+            continue;
+        }
+        let (symbol, object) = &frames[0];
+        if system_library(object) {
+            let caller = frames
+                .iter()
+                .find(|(s, o)| !system_library(o) && *s != "[unknown]")
+                .map_or("[unknown]", |(s, _)| *s);
+            let key = ((*symbol).to_string(), object.clone(), caller.to_string());
+            *counts.entry(key).or_default() += period;
+        }
+        frames.clear();
+    }
+    let mut calls: Vec<Call> = counts
+        .into_iter()
+        .map(|((symbol, object, caller), count)| Call {
+            symbol,
+            object,
+            caller,
+            count,
+        })
+        .collect();
+    calls.sort_by(|x, y| y.count.cmp(&x.count).then_with(|| x.caller.cmp(&y.caller)));
+    calls
 }
 
 /// A count in thousands, millions or billions.
@@ -270,25 +368,6 @@ pub fn compare(a: &Profile, b: &Profile, top: usize) -> String {
 }
 
 fn load_table(out: &mut String, a: &Load, b: &Load, top: usize) {
-    let mut rows: BTreeMap<(&str, &str), Row> = BTreeMap::new();
-    for (side, load) in [(0, a), (1, b)] {
-        for f in &load.functions {
-            let row = rows
-                .entry((f.symbol.as_str(), f.object.as_str()))
-                .or_insert_with(|| Row {
-                    symbol: &f.symbol,
-                    object: &f.object,
-                    a: 0,
-                    b: 0,
-                });
-            if side == 0 {
-                row.a += f.count;
-            } else {
-                row.b += f.count;
-            }
-        }
-    }
-    let total = as_f64(b.total) - as_f64(a.total);
     let ratio = if a.total == 0 {
         String::new()
     } else {
@@ -302,14 +381,70 @@ fn load_table(out: &mut String, a: &Load, b: &Load, top: usize) {
         human(as_f64(b.total)),
         b.seconds
     );
-    let mut rows: Vec<Row> = rows.into_values().filter(|r| r.a != r.b).collect();
+    out.push_str("| function | object | first | second | difference | share |\n");
+    let rows = join(&function_counts(a), &function_counts(b));
+    rows_table(out, rows, a.total, b.total, top);
+    if a.calls.is_empty() || b.calls.is_empty() {
+        return;
+    }
+    out.push_str("The time in shared libraries, by the server function that called in:\n\n");
+    out.push_str("| function | caller | first | second | difference | share |\n");
+    rows_table(
+        out,
+        join(&call_counts(a), &call_counts(b)),
+        a.total,
+        b.total,
+        top,
+    );
+}
+
+fn function_counts(load: &Load) -> Vec<(&str, &str, u64)> {
+    load.functions
+        .iter()
+        .map(|f| (f.symbol.as_str(), f.object.as_str(), f.count))
+        .collect()
+}
+
+fn call_counts(load: &Load) -> Vec<(&str, &str, u64)> {
+    load.calls
+        .iter()
+        .map(|c| (c.symbol.as_str(), c.caller.as_str(), c.count))
+        .collect()
+}
+
+/// Two builds' counts joined by the pair of names that keys them, which is the function and its
+/// object, or the library function and its caller.
+fn join<'a>(a: &[(&'a str, &'a str, u64)], b: &[(&'a str, &'a str, u64)]) -> Vec<Row<'a>> {
+    let mut rows: BTreeMap<(&str, &str), Row> = BTreeMap::new();
+    for (side, counts) in [(0, a), (1, b)] {
+        for &(symbol, object, count) in counts {
+            let row = rows.entry((symbol, object)).or_insert(Row {
+                symbol,
+                object,
+                a: 0,
+                b: 0,
+            });
+            if side == 0 {
+                row.a += count;
+            } else {
+                row.b += count;
+            }
+        }
+    }
+    rows.into_values().collect()
+}
+
+/// The `top` rows whose counts differ the most, sorted by how much more the second build spent,
+/// under a header the caller wrote.
+fn rows_table(out: &mut String, rows: Vec<Row>, a: u64, b: u64, top: usize) {
+    let total = as_f64(b) - as_f64(a);
+    let mut rows: Vec<Row> = rows.into_iter().filter(|r| r.a != r.b).collect();
     rows.sort_by(|x, y| y.difference().abs().total_cmp(&x.difference().abs()));
     rows.truncate(top);
     rows.sort_by(|x, y| y.difference().total_cmp(&x.difference()));
-    out.push_str("| function | object | first | second | difference | share |\n");
     out.push_str("|---|---|---:|---:|---:|---:|\n");
     for row in &rows {
-        let share = if a.total == b.total {
+        let share = if a == b {
             String::new()
         } else {
             format!("{:.1}%", row.difference() / total * 100.0)
@@ -365,6 +500,7 @@ fn profile_load(
         total: 0,
         functions: Vec::new(),
         failed: None,
+        calls: Vec::new(),
     };
     if let Err(why) = measure(install, plan, perf, event, &mut load) {
         load.failed = Some(why);
@@ -425,40 +561,73 @@ fn measure(
             .map(String::from),
         );
     }
+    // A library function needs only the frame above it to be charged to its caller, so a page
+    // of stack is plenty.
+    let graph: &[&str] = if plan.callers {
+        &["--call-graph", "dwarf,4096"]
+    } else {
+        &[]
+    };
     let done = install
         .tool(&format!("perf record {name}"), perf, &format!("{name}.log"))
-        .args(["record", "-N", "-e", event, "-F", "4999", "-p", &pid, "-o"])
-        .args([path_str(&data)?, "--"])
+        .args(["record", "-N", "-e", event, "-F", "4999", "-p", &pid])
+        .args(graph.iter().copied())
+        .args(["-o", path_str(&data)?, "--"])
         .args(workload)
         .run()?;
     if !done.ok {
         return Err(format!("the load exited {:?}", done.code));
     }
     load.seconds = done.seconds;
-    let report = capture(
-        perf,
-        &[
-            "report",
-            "-i",
-            path_str(&data)?,
-            "--stdio",
-            "--no-children",
-            "-q",
-            "--sort",
-            "dso,sym",
-            "-F",
-            "period,dso,sym",
-            "-t",
-            "\t",
-        ],
-    )?;
-    load.functions = read_report(&report);
+    read_samples(perf, path_str(&data)?, plan.callers, load)?;
+    // The samples are kept in the counts, and the raw data is large.
+    std::fs::remove_file(&data).ok();
+    Ok(())
+}
+
+/// Read the counts out of a recording, and the callers when it has call chains.
+fn read_samples(perf: &Path, data: &str, callers: bool, load: &mut Load) -> Result<(), String> {
+    let mut report = vec![
+        "report",
+        "-i",
+        data,
+        "--stdio",
+        "--no-children",
+        "-q",
+        "--sort",
+        "dso,sym",
+        "-F",
+        "period,dso,sym",
+        "-t",
+        "\t",
+    ];
+    if callers {
+        report.extend(["-g", "none"]);
+    }
+    load.functions = read_report(&capture(perf, &report)?);
     load.total = load.functions.iter().map(|f| f.count).sum();
     if load.total == 0 {
         return Err("perf took no samples in the server".into());
     }
-    // The samples are kept in the counts, and the raw data is large.
-    std::fs::remove_file(&data).ok();
+    if callers {
+        let script = capture(
+            perf,
+            &[
+                "script",
+                "-i",
+                data,
+                "-F",
+                "period,ip,sym,dso",
+                "--max-stack",
+                "16",
+                // With libc's symbols installed perf script adds a frame for each function it
+                // can see was inlined, with `(inlined)` where the object goes, so the copy
+                // behind memmove would not be in libc and a fortify wrapper would be a caller.
+                "--no-inline",
+            ],
+        )?;
+        load.calls = read_calls(&script);
+    }
     Ok(())
 }
 
@@ -645,6 +814,7 @@ mod tests {
                 total: functions.iter().map(|f| f.count).sum(),
                 functions,
                 failed: None,
+                calls: Vec::new(),
             }],
         }
     }
@@ -656,6 +826,10 @@ mod tests {
         assert_eq!(base_symbol("hash_search.cold"), "hash_search");
         assert_eq!(base_symbol("[unknown]"), "[unknown]");
         assert_eq!(base_symbol(".Lf_j0"), ".Lf_j0");
+        assert_eq!(
+            base_symbol("__libc_start_main@@GLIBC_2.34"),
+            "__libc_start_main"
+        );
     }
 
     #[test]
@@ -730,6 +904,90 @@ mod tests {
     }
 
     #[test]
+    fn library_samples_are_charged_to_the_caller() {
+        let libc = "/usr/lib/x86_64-linux-gnu/libc.so.6";
+        let server = "/tmp/x/install/bin/postgres";
+        let text = format!(
+            "            250 \n\
+            \t    7f0a1b2c __memmove_avx_unaligned_erms ({libc})\n\
+            \t    55aa0102 make_result_opt_error ({server})\n\
+            \t    55aa0304 numeric_add ({server})\n\
+            \n\
+            100\n\
+            \t7f0a1b2c __memmove_avx_unaligned_erms ({libc})\n\
+            \t7f0a2000 __libc_inner ({libc})\n\
+            \t55aa0500 accum_sum_copy.part.0 ({server})\n\
+            \n\
+            40\n\
+            \t7f0a1b2c __memmove_avx_unaligned_erms ({libc})\n\
+            \t0 [unknown] ([unknown])\n\
+            \n\
+            70\n\
+            \t55aa0102 make_result_opt_error ({server})\n\
+            \n\
+            30\n\
+            \t7f0a1b2c __memmove_avx_unaligned_erms ({libc})\n\
+            \t55aa0110 make_result_opt_error ({server})\n\
+            \n\
+            20\n\
+            \t7f0a3000 _int_free ({libc})\n\
+            \t7f0a3100 __libc_free@@GLIBC_2.2.5 ({libc})\n\
+            \t55aa0600 AllocSetFree ({server})\n\
+            \n\
+            60\n\
+            \t7f1b0000 exec_stmts (/tmp/x/install/lib/plpgsql.so)\n\
+            \t55aa0700 ExecInterpExpr ({server})\n"
+        );
+        let calls = read_calls(&text);
+        let call = |caller: &str, count| Call {
+            symbol: "__memmove_avx_unaligned_erms".into(),
+            object: "libc.so.6".into(),
+            caller: caller.into(),
+            count,
+        };
+        assert_eq!(
+            calls,
+            vec![
+                call("make_result_opt_error", 280),
+                call("accum_sum_copy", 100),
+                call("[unknown]", 40),
+                Call {
+                    symbol: "_int_free".into(),
+                    object: "libc.so.6".into(),
+                    caller: "AllocSetFree".into(),
+                    count: 20,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn the_callers_get_a_table_of_their_own() {
+        let mut a = profile("gcc 14", vec![function("memmove", "libc.so.6", 100)]);
+        let mut b = profile("rucc 0.30", vec![function("memmove", "libc.so.6", 300)]);
+        let call = |caller: &str, count| Call {
+            symbol: "memmove".into(),
+            object: "libc.so.6".into(),
+            caller: caller.into(),
+            count,
+        };
+        a.loads[0].calls = vec![call("numeric_add", 60), call("heap_fill", 40)];
+        b.loads[0].calls = vec![call("numeric_add", 250), call("heap_fill", 50)];
+        let report = compare(&a, &b, 40);
+        assert!(report.contains("| function | caller |"), "{report}");
+        assert!(
+            report.contains("| `memmove` | numeric_add | 60 | 250 | +190 | 95.0% |"),
+            "{report}"
+        );
+        assert!(
+            report.find("numeric_add").unwrap() < report.find("heap_fill").unwrap(),
+            "{report}"
+        );
+        a.loads[0].calls.clear();
+        assert!(!compare(&a, &b, 40).contains("| caller |"));
+    }
+
+    #[test]
     fn a_different_setup_is_called_out() {
         let a = profile("gcc 14", vec![function("f", "postgres", 10)]);
         let mut b = profile("rucc 0.18", vec![function("f", "postgres", 20)]);
@@ -745,7 +1003,7 @@ mod tests {
         let p = profile("gcc 14", vec![function("f", "postgres", 10)]);
         let text = serde_json::to_string(&p).unwrap();
         assert_eq!(serde_json::from_str::<Profile>(&text).unwrap(), p);
-        assert!(!text.contains("failed"));
+        assert!(!text.contains("failed") && !text.contains("calls"));
     }
 
     #[test]
