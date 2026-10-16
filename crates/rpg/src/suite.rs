@@ -750,9 +750,9 @@ mod tests {
         let out = root.join("out");
         std::fs::create_dir_all(&log).unwrap();
         std::fs::create_dir_all(&out).unwrap();
-        let mut long = "x".repeat(usize::try_from(SERVER_LOG_TAIL).unwrap());
-        long.push_str("FATAL:  could not receive data from WAL stream\n");
-        std::fs::write(log.join("027_stream_regress_standby_1.log"), &long).unwrap();
+        let mut standby = "x".repeat(usize::try_from(SERVER_LOG_TAIL).unwrap());
+        standby.push_str("FATAL:  could not receive data from WAL stream\n");
+        std::fs::write(log.join("027_stream_regress_standby_1.log"), &standby).unwrap();
         std::fs::write(log.join("027_stream_regress_primary.log"), "LOG:  ready\n").unwrap();
         std::fs::write(log.join("regress_log_027_stream_regress"), "not a server").unwrap();
         std::fs::write(log.join("028_pitr_timelines_node_a.log"), "another script").unwrap();
