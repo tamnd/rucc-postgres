@@ -559,8 +559,46 @@ fn meson_world(tests: &[MesonTest], build_dir: &Path, artifacts: &Path) -> Regre
             artifacts.join(format!("{name}.log")),
         )
         .ok();
+        server_logs(&dir.join("log"), script, &name, artifacts);
     }
     world_from_testlog(tests)
+}
+
+/// How much of each server log a failed TAP script keeps, from the end. The world runs log at
+/// debug1, which makes a log of a script that runs the regression suite tens of megabytes, and a
+/// server that died or stopped replaying says why at the end.
+const SERVER_LOG_TAIL: u64 = 256 * 1024;
+
+/// Copy the end of the log of each server a failed TAP script started to `<name>.<node>.log`. The
+/// framework writes those next to the script's own log as `<script>_<node>.log`.
+fn server_logs(log_dir: &Path, script: &str, name: &str, artifacts: &Path) {
+    let Ok(entries) = std::fs::read_dir(log_dir) else {
+        return;
+    };
+    let prefix = format!("{script}_");
+    for entry in entries.flatten() {
+        let file = entry.file_name();
+        let Some(node) = file
+            .to_str()
+            .and_then(|f| f.strip_prefix(&prefix))
+            .and_then(|f| f.strip_suffix(".log"))
+        else {
+            continue;
+        };
+        let to = artifacts.join(format!("{name}.{node}.log"));
+        copy_tail(&entry.path(), &to, SERVER_LOG_TAIL).ok();
+    }
+}
+
+/// Copy the last `most` bytes of a file, or all of it when it is shorter.
+fn copy_tail(from: &Path, to: &Path, most: u64) -> std::io::Result<()> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(from)?;
+    let len = file.metadata()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(most)))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    std::fs::write(to, bytes)
 }
 
 /// Add one directory's TAP scripts to a per module output, and copy the log of each script that
@@ -582,6 +620,7 @@ fn tap(output: &mut RegressOutput, module: &str, dir: &Path, run: RegressOutput,
                 artifacts.join(format!("{name}.log")),
             )
             .ok();
+            server_logs(&dir.join("tmp_check/log"), stem, &name, artifacts);
         }
         result.name = format!("{module}/{}", result.name);
         output.results.push(result);
@@ -701,6 +740,47 @@ mod tests {
         assert!(crashed_in(&log));
         std::fs::write(&log, "LOG:  database system is shut down\n").unwrap();
         assert!(!crashed_in(&log));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_failed_script_keeps_the_end_of_each_server_log() {
+        let root = std::env::temp_dir().join(format!("rpg-server-logs-{}", std::process::id()));
+        let log = root.join("log");
+        let out = root.join("out");
+        std::fs::create_dir_all(&log).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+        let mut standby = "x".repeat(usize::try_from(SERVER_LOG_TAIL).unwrap());
+        standby.push_str("FATAL:  could not receive data from WAL stream\n");
+        std::fs::write(log.join("027_stream_regress_standby_1.log"), &standby).unwrap();
+        std::fs::write(log.join("027_stream_regress_primary.log"), "LOG:  ready\n").unwrap();
+        std::fs::write(log.join("regress_log_027_stream_regress"), "not a server").unwrap();
+        std::fs::write(log.join("028_pitr_timelines_node_a.log"), "another script").unwrap();
+        server_logs(
+            &log,
+            "027_stream_regress",
+            "recovery-027_stream_regress",
+            &out,
+        );
+        let mut kept: Vec<String> = std::fs::read_dir(&out)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        kept.sort();
+        assert_eq!(
+            kept,
+            [
+                "recovery-027_stream_regress.primary.log",
+                "recovery-027_stream_regress.standby_1.log"
+            ]
+        );
+        let standby =
+            std::fs::read_to_string(out.join("recovery-027_stream_regress.standby_1.log")).unwrap();
+        assert_eq!(standby.len(), usize::try_from(SERVER_LOG_TAIL).unwrap());
+        assert!(standby.ends_with("from WAL stream\n"));
+        let primary =
+            std::fs::read_to_string(out.join("recovery-027_stream_regress.primary.log")).unwrap();
+        assert_eq!(primary, "LOG:  ready\n");
         std::fs::remove_dir_all(&root).ok();
     }
 
