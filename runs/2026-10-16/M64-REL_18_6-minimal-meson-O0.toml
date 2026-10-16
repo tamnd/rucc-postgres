@@ -1,0 +1,14 @@
+date = "2026-10-16"
+row = "M64"
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+config = "minimal"
+system = "meson"
+level = "-O0"
+compiler = "rucc 0.30.1"
+host = "sjc22-be105-bc3c456d-0697-4eda-82cd-5b7776cf2ef8-02FE76D15B8A"
+built = true
+failing = []
+
+[counts]
+passed = 911
