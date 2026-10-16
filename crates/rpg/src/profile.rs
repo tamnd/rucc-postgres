@@ -154,8 +154,9 @@ impl Profile {
     }
 }
 
-/// The symbol a clone was made from: `foo` for `foo.isra.0`, `foo.part.1` or `foo.cold`. C
-/// names have no dots, so everything from the first one on is the compiler's. A name that starts
+/// The symbol a clone was made from: `foo` for `foo.isra.0`, `foo.part.1` or `foo.cold`, and
+/// `foo` for a versioned `foo@@GLIBC_2.34` too. C names have no dots and no at signs, so
+/// everything from the first one on is the compiler's or the linker's. A name that starts
 /// with a dot, like a local label an assembler left in the symbol table, is kept whole, since
 /// samples perf puts there belong to whatever function the label sits in and the name is the
 /// only clue to which.
@@ -163,7 +164,7 @@ fn base_symbol(symbol: &str) -> &str {
     if symbol.starts_with(['[', '.']) || symbol.starts_with("0x") {
         return symbol;
     }
-    symbol.split('.').next().unwrap_or(symbol)
+    symbol.split(['.', '@']).next().unwrap_or(symbol)
 }
 
 /// Read `perf report` output made with `-F period,dso,sym` and a tab between the fields. A
@@ -233,9 +234,16 @@ fn frame(line: &str) -> Option<(&str, String)> {
     Some((symbol, object_name(object)))
 }
 
+/// Whether an object is a library of the system, like `libc.so.6`, rather than the server or one
+/// of its modules, which have no version after the `.so`.
+fn system_library(object: &str) -> bool {
+    object.contains(".so.")
+}
+
 /// Read `perf script` output made with `-F period,ip,sym,dso` from a recording with call chains,
-/// and charge each sample taken in a shared library to the first function up its chain that is
-/// in another object. A sample is its period on a line of its own and then its frames, the
+/// and charge each sample taken in a library of the system to the first function up its chain
+/// that is in neither that library nor another one, so `_int_free` is charged to whoever called
+/// `free` and not to `free`. A sample is its period on a line of its own and then its frames, the
 /// innermost first, and a blank line ends it.
 fn read_calls(text: &str) -> Vec<Call> {
     let mut counts: BTreeMap<(String, String, String), u64> = BTreeMap::new();
@@ -256,10 +264,10 @@ fn read_calls(text: &str) -> Vec<Call> {
             continue;
         }
         let (symbol, object) = &frames[0];
-        if object.contains(".so") {
+        if system_library(object) {
             let caller = frames
                 .iter()
-                .find(|(s, o)| o != object && *s != "[unknown]")
+                .find(|(s, o)| !system_library(o) && *s != "[unknown]")
                 .map_or("[unknown]", |(s, _)| *s);
             let key = ((*symbol).to_string(), object.clone(), caller.to_string());
             *counts.entry(key).or_default() += period;
@@ -612,6 +620,10 @@ fn read_samples(perf: &Path, data: &str, callers: bool, load: &mut Load) -> Resu
                 "period,ip,sym,dso",
                 "--max-stack",
                 "16",
+                // With libc's symbols installed perf script adds a frame for each function it
+                // can see was inlined, with `(inlined)` where the object goes, so the copy
+                // behind memmove would not be in libc and a fortify wrapper would be a caller.
+                "--no-inline",
             ],
         )?;
         load.calls = read_calls(&script);
@@ -814,6 +826,10 @@ mod tests {
         assert_eq!(base_symbol("hash_search.cold"), "hash_search");
         assert_eq!(base_symbol("[unknown]"), "[unknown]");
         assert_eq!(base_symbol(".Lf_j0"), ".Lf_j0");
+        assert_eq!(
+            base_symbol("__libc_start_main@@GLIBC_2.34"),
+            "__libc_start_main"
+        );
     }
 
     #[test]
@@ -911,7 +927,16 @@ mod tests {
             \n\
             30\n\
             \t7f0a1b2c __memmove_avx_unaligned_erms ({libc})\n\
-            \t55aa0110 make_result_opt_error ({server})\n"
+            \t55aa0110 make_result_opt_error ({server})\n\
+            \n\
+            20\n\
+            \t7f0a3000 _int_free ({libc})\n\
+            \t7f0a3100 __libc_free@@GLIBC_2.2.5 ({libc})\n\
+            \t55aa0600 AllocSetFree ({server})\n\
+            \n\
+            60\n\
+            \t7f1b0000 exec_stmts (/tmp/x/install/lib/plpgsql.so)\n\
+            \t55aa0700 ExecInterpExpr ({server})\n"
         );
         let calls = read_calls(&text);
         let call = |caller: &str, count| Call {
@@ -926,6 +951,12 @@ mod tests {
                 call("make_result_opt_error", 280),
                 call("accum_sum_copy", 100),
                 call("[unknown]", 40),
+                Call {
+                    symbol: "_int_free".into(),
+                    object: "libc.so.6".into(),
+                    caller: "AllocSetFree".into(),
+                    count: 20,
+                },
             ]
         );
     }
