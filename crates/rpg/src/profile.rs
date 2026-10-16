@@ -571,7 +571,14 @@ fn measure(
         return Err(format!("the load exited {:?}", done.code));
     }
     load.seconds = done.seconds;
-    let data = path_str(&data)?;
+    read_samples(perf, path_str(&data)?, plan.callers, load)?;
+    // The samples are kept in the counts, and the raw data is large.
+    std::fs::remove_file(&data).ok();
+    Ok(())
+}
+
+/// Read the counts out of a recording, and the callers when it has call chains.
+fn read_samples(perf: &Path, data: &str, callers: bool, load: &mut Load) -> Result<(), String> {
     let mut report = vec![
         "report",
         "-i",
@@ -586,7 +593,7 @@ fn measure(
         "-t",
         "\t",
     ];
-    if plan.callers {
+    if callers {
         report.extend(["-g", "none"]);
     }
     load.functions = read_report(&capture(perf, &report)?);
@@ -594,7 +601,7 @@ fn measure(
     if load.total == 0 {
         return Err("perf took no samples in the server".into());
     }
-    if plan.callers {
+    if callers {
         let script = capture(
             perf,
             &[
@@ -609,8 +616,6 @@ fn measure(
         )?;
         load.calls = read_calls(&script);
     }
-    // The samples are kept in the counts, and the raw data is large.
-    std::fs::remove_file(data).ok();
     Ok(())
 }
 
