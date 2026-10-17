@@ -6,21 +6,21 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Row | Date | Compiler | Tests | Since the night before |
 |---|---|---|---|---|
-| L64-REL_18_6-full-autoconf-O2 | 2026-10-16 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-full-meson-O2 | 2026-10-16 | rucc 0.30.1 | 942 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-O0 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-O1 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-O2 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-O2-flto | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-O2-mold | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-O2-rpg-ar | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-autoconf-Os | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-meson-O0 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-meson-O2 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-meson-O2-flto | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-meson-O2-lld | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-minimal-meson-O2-rpg-ar | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_18_6-services-meson-O2 | 2026-10-16 | rucc 0.30.1 | 947 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-full-autoconf-O2 | 2026-10-17 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-full-meson-O2 | 2026-10-17 | rucc 0.30.1 | 942 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-O0 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-O1 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-O2 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-O2-flto | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-O2-mold | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-O2-rpg-ar | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-autoconf-Os | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-meson-O0 | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-meson-O2 | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-meson-O2-flto | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-meson-O2-lld | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-minimal-meson-O2-rpg-ar | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_18_6-services-meson-O2 | 2026-10-17 | rucc 0.30.1 | 947 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | L64-REL_19_STABLE-full-autoconf-O2 | 2026-10-12 | rucc 0.24.8 | 1018 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | L64-REL_19_STABLE-full-meson-O2 | 2026-10-12 | rucc 0.24.8 | 1016 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | L64-REL_19_STABLE-minimal-autoconf-O0 | 2026-10-12 | rucc 0.24.8 | 986 passed, 0 not, 0 skipped | 0 worse, 0 better |
@@ -36,17 +36,17 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | L64-REL_19_STABLE-minimal-meson-O2-lld | 2026-10-12 | rucc 0.24.8 | 984 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | L64-REL_19_STABLE-minimal-meson-O2-rpg-ar | 2026-10-12 | rucc 0.24.8 | 984 passed, 0 not, 0 skipped | first night |
 | L64-REL_19_STABLE-services-meson-O2 | 2026-10-12 | rucc 0.24.8 | 1022 passed, 0 not, 0 skipped | first night |
-| LA64-REL_18_6-full-autoconf-O2 | 2026-10-16 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| LA64-REL_18_6-minimal-autoconf-O0 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| LA64-REL_18_6-minimal-autoconf-O2 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| LA64-REL_18_6-full-autoconf-O2 | 2026-10-17 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| LA64-REL_18_6-minimal-autoconf-O0 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| LA64-REL_18_6-minimal-autoconf-O2 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_19_STABLE-full-autoconf-O2 | 2026-10-12 | rucc 0.24.8 | 1018 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_19_STABLE-minimal-autoconf-O0 | 2026-10-05 | rucc 0.20.0 | 984 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_19_STABLE-minimal-autoconf-O2 | 2026-10-12 | rucc 0.24.8 | 986 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-full-autoconf-O2 | 2026-10-16 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-autoconf-O0 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-autoconf-O2 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-meson-O0 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_18_6-minimal-meson-O2 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-full-autoconf-O2 | 2026-10-17 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-autoconf-O0 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-autoconf-O2 | 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-meson-O0 | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_18_6-minimal-meson-O2 | 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_19_STABLE-full-autoconf-O2 | 2026-10-12 | rucc 0.24.8 | 1018 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_19_STABLE-minimal-autoconf-O0 | 2026-10-12 | rucc 0.24.8 | 986 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_19_STABLE-minimal-autoconf-O2 | 2026-10-12 | rucc 0.24.8 | 986 passed, 0 not, 0 skipped | 0 worse, 0 better |
@@ -56,19 +56,12 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | REL_19_STABLE-minimal-autoconf-O2 | 2026-09-29 | rucc 0.15.2 | 984 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-meson-O0 | 2026-09-29 | rucc 0.15.2 | 982 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-meson-O2 | 2026-09-29 | rucc 0.15.2 | 982 passed, 0 not, 0 skipped | first night |
-| W64-REL_18_6-full-meson-O2 | 2026-10-16 | rucc 0.30.1 | 942 passed, 1 not, 0 skipped | 0 worse, 1 better |
-| W64-REL_18_6-minimal-meson-O0 | 2026-10-16 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| W64-REL_18_6-minimal-meson-O2 | 2026-10-16 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| W64-REL_18_6-full-meson-O2 | 2026-10-17 | rucc 0.30.1 | 943 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| W64-REL_18_6-minimal-meson-O0 | 2026-10-17 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| W64-REL_18_6-minimal-meson-O2 | 2026-10-17 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | W64-REL_19_STABLE-full-meson-O2 | 2026-10-12 | rucc 0.24.8 | 1016 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | W64-REL_19_STABLE-minimal-meson-O0 | 2026-10-12 | rucc 0.24.8 | 984 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | W64-REL_19_STABLE-minimal-meson-O2 | 2026-10-12 | rucc 0.24.8 | 984 passed, 0 not, 0 skipped | 0 worse, 0 better |
-
-## W64-REL_18_6-full-meson-O2 on 2026-10-16
-
-Passing again:
-
-- `world/recovery/027_stream_regress`
-
 
 ## History
 
@@ -76,6 +69,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
@@ -94,6 +88,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 942 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 942 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 942 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 942 passed, 0 not, 0 skipped |
@@ -112,6 +107,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -132,6 +128,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -150,6 +147,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -170,6 +168,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -187,6 +186,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -202,6 +202,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -217,6 +218,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -235,6 +237,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -255,6 +258,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -275,6 +279,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -292,6 +297,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -307,6 +313,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -322,6 +329,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 947 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 947 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 947 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 947 passed, 0 not, 0 skipped |
@@ -443,6 +451,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
@@ -460,6 +469,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -480,6 +490,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -522,6 +533,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 944 passed, 0 not, 0 skipped |
@@ -539,6 +551,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -559,6 +572,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 913 passed, 0 not, 0 skipped |
@@ -579,6 +593,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -598,6 +613,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 911 passed, 0 not, 0 skipped |
@@ -676,6 +692,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 943 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 942 passed, 1 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 942 passed, 1 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 943 passed, 0 not, 0 skipped |
@@ -691,6 +708,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
@@ -707,6 +725,7 @@ Passing again:
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-10-17 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
 | 2026-10-16 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
 | 2026-10-15 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
 | 2026-10-14 | rucc 0.30.1 | 912 passed, 0 not, 0 skipped |
