@@ -11,6 +11,9 @@
 //! level, clients and sizes. A measure whose ratio grew by more than `--threshold` percent (10 by
 //! default) and by more than the noise of both nights together is a regression, and when there
 //! is one the text of an issue is written for the workflow to open with the `kind/perf` label.
+//! That takes a compiler that changed between the two nights. With the same rucc and the same gcc
+//! building the same pin both nights, the code did not change and only the runner did, so a
+//! regression is still printed but no issue is written for it.
 //! `reports/bench.md` is rewritten with the headline ratios of the last thirty nights.
 
 use crate::bench::{Bench, Measure, spread};
@@ -254,6 +257,20 @@ pub struct Recorded {
     pub path: PathBuf,
 }
 
+impl Recorded {
+    /// Whether the night before was built with the same rucc and gcc as tonight.
+    ///
+    /// The pin is already the same, since only a night run the same way is compared, so on such
+    /// a pair both servers are the same code as the night before and any change in a ratio is
+    /// the runner.
+    #[must_use]
+    pub fn same_compilers(&self) -> bool {
+        self.before
+            .as_ref()
+            .is_some_and(|b| b.rucc == self.night.rucc && b.gcc == self.night.gcc)
+    }
+}
+
 /// Write tonight's night file and the report, and compare tonight with the night before.
 pub fn record(
     gcc: &Bench,
@@ -325,7 +342,7 @@ pub fn report(all: &[BenchNight]) -> String {
 #[must_use]
 pub fn issue(recorded: &Recorded, run_url: Option<&str>) -> Option<(String, String)> {
     let before = recorded.before.as_ref()?;
-    if recorded.worse.is_empty() {
+    if recorded.worse.is_empty() || recorded.same_compilers() {
         return None;
     }
     let night = &recorded.night;
@@ -540,9 +557,16 @@ mod tests {
         gcc.scale = 10;
         rucc.scale = 10;
         record(&gcc, &rucc, &runs, &reports, 0.10).unwrap();
+        // The same compilers as the first night, so the drop is the runner and not an issue.
         let (gcc, rucc) = pair("2026-10-03", 200.0, 300.0);
+        let same = record(&gcc, &rucc, &runs, &reports, 0.10).unwrap();
+        assert_eq!(same.worse.len(), 1);
+        assert!(same.same_compilers() && issue(&same, None).is_none());
+        let (gcc, mut rucc) = pair("2026-10-03", 200.0, 300.0);
+        rucc.compiler = "rucc 0.18.9".into();
         let third = record(&gcc, &rucc, &runs, &reports, 0.10).unwrap();
         assert_eq!(third.before.as_ref().unwrap().date, "2026-10-01");
+        assert!(!third.same_compilers());
         let (title, body) = issue(&third, Some("https://example.com/run/1")).unwrap();
         assert_eq!(title, "Bench 2026-10-03: rucc lost ground on 1 measure");
         assert!(
@@ -555,7 +579,7 @@ mod tests {
         assert_eq!(rows.len(), 3, "{report}");
         assert_eq!(
             rows[0],
-            "| 2026-10-03 | REL_18_6 | -O2 | rucc 0.18.8 | 5.00 | | 3.00 | 1.50 |"
+            "| 2026-10-03 | REL_18_6 | -O2 | rucc 0.18.9 | 5.00 | | 3.00 | 1.50 |"
         );
         assert!(runs.join("2026-10-03.json").is_file());
         std::fs::remove_dir_all(&dir).ok();
