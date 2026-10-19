@@ -516,6 +516,9 @@ fn bench_night(repo: &Repo, args: &Args) -> Result<ExitCode, String> {
             worse.name, worse.before, worse.tonight
         );
     }
+    if !recorded.worse.is_empty() && recorded.same_compilers() {
+        println!("no issue:    the same rucc and gcc as the night before, so that was the runner");
+    }
     for missing in &recorded.night.missing {
         println!("left out:    {missing}");
     }
