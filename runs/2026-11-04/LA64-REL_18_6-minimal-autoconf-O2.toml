@@ -1,0 +1,15 @@
+date = "2026-11-04"
+row = "LA64"
+pin = "REL_18_6"
+commit = "724edf9bde9d356724ad384a2e196edc3c9f80f7"
+config = "minimal"
+system = "autoconf"
+level = "-O2"
+compiler = "rucc 0.30.11"
+host = "runnervmkb2gk"
+built = true
+failing = ["world/src/test/recovery/t/019_replslot_limit.pl"]
+
+[counts]
+failed = 1
+passed = 912
