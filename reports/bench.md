@@ -4,6 +4,7 @@ Each number is how many times as long the rucc server took as the gcc one, built
 
 | night | pin | level | rucc | select-only | tpcb-like | analytic | make check |
 |---|---|---|---|---:|---:|---:|---:|
+| 2026-11-10 | REL_18_6 | -O2 | rucc 0.30.11 | 1.08 | 0.97 | 0.99 | 1.04 |
 | 2026-11-08 | REL_18_6 | -O2 | rucc 0.30.11 | 1.03 | 1.07 | 0.66 | 0.98 |
 | 2026-11-07 | REL_18_6 | -O2 | rucc 0.30.11 | 1.05 | 1.07 | 1.05 | 1.06 |
 | 2026-11-06 | REL_18_6 | -O2 | rucc 0.30.11 | 1.06 | 1.11 | 1.07 | 1.00 |
@@ -33,4 +34,3 @@ Each number is how many times as long the rucc server took as the gcc one, built
 | 2026-10-13 | REL_18_6 | -O2 | rucc 0.24.8 | 1.12 | 1.12 | 1.15 | 1.09 |
 | 2026-10-12 | REL_18_6 | -O2 | rucc 0.24.8 | 1.11 | 1.10 | 1.09 | 1.09 |
 | 2026-10-11 | REL_18_6 | -O2 | rucc 0.24.8 | 1.10 | 1.06 | 1.04 | 1.10 |
-| 2026-10-10 | REL_18_6 | -O2 | rucc 0.24.8 | 1.07 | 1.03 | 1.05 | 1.09 |
