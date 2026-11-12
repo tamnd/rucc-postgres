@@ -15,8 +15,6 @@
 name: freebsd
 
 on:
-  push:
-    branches: [f64-row]
   workflow_dispatch:
     inputs:
       pin:
