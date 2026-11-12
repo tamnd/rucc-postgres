@@ -1,4 +1,4 @@
-# The four rows of the design, document 09. A row is a platform and the reference compiler that
+# The rows of the design, document 09, and F64, which milestone B10 of tamnd/rucc-bsd adds. A row is a platform and the reference compiler that
 # grades it, not a single machine: the machines are listed in order of preference, and a baseline
 # records which one it actually ran on.
 #
@@ -34,5 +34,16 @@ name = "W64"
 description = "Windows x86-64, MSYS2 UCRT64"
 machines = ["gamingpc", "windows-2022 runner"]
 reference = "gcc"
+build-system = "meson"
+test-timeout = 300
+
+# FreeBSD amd64 on the RR image of tamnd/rucc-bsd, a FreeBSD whose world and kernel rucc built,
+# with rucc installed from its FreeBSD package. The job is .github/workflows/freebsd.yml. The
+# reference is gcc15 from the FreeBSD packages, as the image has no compiler of its own.
+[[row]]
+name = "F64"
+description = "FreeBSD amd64, built by rucc"
+machines = ["RR image of tamnd/rucc-bsd on an ubuntu-24.04 runner"]
+reference = "gcc15"
 build-system = "meson"
 test-timeout = 300

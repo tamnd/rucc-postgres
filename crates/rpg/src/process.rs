@@ -281,10 +281,11 @@ pub fn hostname() -> String {
 ///
 /// The suites run `make -Otarget`, and output sync arrived in GNU make 4.0. macOS ships 3.81 as
 /// `make`, and Homebrew's newer one is `gmake`, so on macOS `gmake` is taken when it is on the
-/// path. Everywhere else `make` is GNU make 4 already.
+/// path. On FreeBSD `make` is the BSD make, and GNU make from the packages is `gmake` too.
+/// Everywhere else `make` is GNU make 4 already.
 #[must_use]
 pub fn make() -> PathBuf {
-    if cfg!(target_os = "macos")
+    if cfg!(any(target_os = "macos", target_os = "freebsd"))
         && let Some(gmake) = which("gmake")
     {
         return gmake;

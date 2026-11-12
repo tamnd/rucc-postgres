@@ -104,7 +104,7 @@ PG9 asks for a build with rucc's own archiver as `AR`. rucc writes archives with
 
 ## Rows and baselines
 
-`rows.toml` has the four platforms rucc is graded on, each with its reference compiler: L64 (Linux x86-64, gcc-16), LA64 (Linux AArch64, gcc-16), M64 (macOS arm64, Apple clang) and W64 (Windows x86-64 under MSYS2 UCRT64, gcc). `provision/` has a script per row that installs what the minimal configuration and the TAP tests need. The Linux scripts create an unprivileged `pg` user and only touch `kernel.core_pattern` when asked with `--core-pattern`.
+`rows.toml` has the platforms rucc is graded on, each with its reference compiler: L64 (Linux x86-64, gcc-16), LA64 (Linux AArch64, gcc-16), M64 (macOS arm64, Apple clang), W64 (Windows x86-64 under MSYS2 UCRT64, gcc) and F64 (FreeBSD amd64 on a FreeBSD that rucc built, gcc15). F64 runs in the RR image of tamnd/rucc-bsd under QEMU, by `.github/workflows/freebsd.yml`. `provision/` has a script per row that installs what the minimal configuration and the TAP tests need. The Linux scripts create an unprivileged `pg` user and only touch `kernel.core_pattern` when asked with `--core-pattern`.
 
 `rpg baseline --row L64` builds with the row's reference compiler and runs each suite three times, or `--runs N`. A test that passed every run is `passing`, one that failed every run is `failing`, and one that did both is `flaky`. The sets and the build and test times go to `baselines/<row>/<pin>/<config>/baseline.toml`, next to the records they came from.
 
