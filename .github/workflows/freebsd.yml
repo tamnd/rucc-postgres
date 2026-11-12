@@ -15,6 +15,8 @@
 name: freebsd
 
 on:
+  push:
+    branches: [f64-row]
   workflow_dispatch:
     inputs:
       pin:
@@ -42,12 +44,12 @@ permissions:
 
 jobs:
   world-f64:
-    name: world on F64 under meson at ${{ inputs.level }}
+    name: world on F64 under meson at ${{ inputs.level || '-O2' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 340
     env:
-      PIN: ${{ inputs.pin }}
-      LEVEL: ${{ inputs.level }}
+      PIN: ${{ inputs.pin || 'REL_18_6' }}
+      LEVEL: ${{ inputs.level || '-O2' }}
       RB_VM_DIR: /mnt/rb-rr
       BSD: tamnd/rucc-bsd
     steps:
