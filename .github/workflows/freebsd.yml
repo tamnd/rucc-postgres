@@ -1,0 +1,192 @@
+# Row F64: FreeBSD amd64, on a FreeBSD that rucc built. tamnd/rucc-bsd builds the world and the
+# kernel of FreeBSD 15.1 with rucc and makes the RR image of them (its workflow freebsd-r, target
+# rr). Its workflow freebsd-self makes the FreeBSD package of rucc. This job boots that image under
+# QEMU with KVM, with the scripts/freebsd/rr-vm.sh of tamnd/rucc-bsd, and drives it by ssh. In the
+# image, provision/f64.sh installs what the build and the TAP tests need, pkg add installs the rucc
+# package, and rpg builds Postgres with that rucc under meson and runs the world suite, which is
+# make check-world under meson, as the user pg.
+#
+# rpg is built in the image too, by the rust package of FreeBSD. Its linker is cc, which is rucc.
+# When that link fails, the job installs gcc15 and links rpg with it, so that the row still gets a
+# result, and the summary says so.
+#
+# It runs by hand only. The image and the package come from the newest runs on main of
+# tamnd/rucc-bsd that have them, or from the runs that r_run and self_run name.
+name: freebsd
+
+on:
+  workflow_dispatch:
+    inputs:
+      pin:
+        description: pin from pins.toml, a release
+        default: REL_18_6
+      level:
+        description: the optimization level
+        type: choice
+        options: [-O2, -O0]
+        default: -O2
+      r_run:
+        description: the freebsd-r run of tamnd/rucc-bsd whose RR image to boot; empty for the newest on main
+        default: ""
+      self_run:
+        description: the freebsd-self run of tamnd/rucc-bsd whose rucc package to install; empty for the newest
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  world-f64:
+    name: world on F64 under meson at ${{ inputs.level }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    env:
+      PIN: ${{ inputs.pin }}
+      LEVEL: ${{ inputs.level }}
+      RB_VM_DIR: /mnt/rb-rr
+      BSD: tamnd/rucc-bsd
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
+        with:
+          repository: tamnd/rucc-bsd
+          path: bsd
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo mkdir -p /mnt/rb "$RB_VM_DIR"
+          sudo chown "$USER" /mnt/rb "$RB_VM_DIR"
+      - name: let the runner user open /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+      - name: install QEMU
+        run: bsd/scripts/ci/apt-install.sh qemu-system-x86 qemu-utils ovmf zstd
+      - name: the runs of tamnd/rucc-bsd
+        id: runs
+        run: |
+          set -euo pipefail
+          newest() {
+            local workflow=$1 artifact=$2 run
+            for run in $(gh run list -R "$BSD" -w "$workflow" -L 40 --json databaseId -q '.[].databaseId'); do
+              if gh api "repos/$BSD/actions/runs/$run/artifacts" -q '.artifacts[] | select(.expired | not) | .name' \
+                | grep -qx "$artifact"; then
+                echo "$run"
+                return
+              fi
+            done
+          }
+          r=${R_RUN:-$(newest freebsd-r.yml freebsd-r-image)}
+          s=${SELF_RUN:-$(newest freebsd-self.yml freebsd-rucc-pkg)}
+          if [ -z "$r" ] || [ -z "$s" ]; then
+            echo "::error::no run of $BSD with the RR image ($r) or the rucc package ($s)"
+            exit 1
+          fi
+          echo "r=$r" >> "$GITHUB_OUTPUT"
+          echo "s=$s" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R_RUN: ${{ inputs.r_run }}
+          SELF_RUN: ${{ inputs.self_run }}
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: freebsd-r-image
+          path: image
+          repository: tamnd/rucc-bsd
+          run-id: ${{ steps.runs.outputs.r }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: freebsd-rucc-pkg
+          path: pkg
+          repository: tamnd/rucc-bsd
+          run-id: ${{ steps.runs.outputs.s }}
+          github-token: ${{ github.token }}
+      - name: boot the RR image
+        run: |
+          zstd -d -q image/freebsd.img.zst -o /mnt/rb/freebsd.img
+          rm -rf image
+          bsd/scripts/freebsd/rr-vm.sh up /mnt/rb/freebsd.img
+      - name: provision
+        run: |
+          set -euo pipefail
+          vm=bsd/scripts/freebsd/rr-vm.sh
+          name=$(cd pkg && ls rucc-*.pkg)
+          $vm ssh 'newfs -U -t /dev/vtbd2 > /dev/null && mkdir -p /build && mount -o noatime /dev/vtbd2 /build'
+          $vm put "pkg/$name" "/build/$name"
+          $vm put provision/f64.sh /root/f64.sh
+          $vm ssh "env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes pkg install -y binutils && pkg add /build/$name && sh /root/f64.sh"
+          git archive --format=tar --prefix=rpg/ HEAD | $vm ssh 'tar -xf - -C /build && chown -R pg /build'
+          {
+            echo "### Postgres $PIN on F64 under meson at $LEVEL"
+            echo
+            echo "The RR image of $BSD freebsd-r run ${{ steps.runs.outputs.r }}, with the rucc package of freebsd-self run ${{ steps.runs.outputs.s }}:"
+            echo
+            echo '```'
+            $vm ssh "uname -a; pkg info -q rucc; cc --version | head -1; cat /usr/local/bin/rucc.source"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: build rpg
+        timeout-minutes: 60
+        run: |
+          vm=bsd/scripts/freebsd/rr-vm.sh
+          if $vm ssh "su -m pg -c 'cd /build/rpg && env HOME=/build CARGO_HOME=/build/cargo cargo build --release --workspace'"; then
+            echo "rpg was linked by cc, the rucc of the package." >> "$GITHUB_STEP_SUMMARY"
+          else
+            $vm ssh 'env ASSUME_ALWAYS_YES=yes IGNORE_OSVERSION=yes pkg install -y gcc15'
+            $vm ssh "su -m pg -c 'cd /build/rpg && env HOME=/build CARGO_HOME=/build/cargo CARGO_TARGET_X86_64_UNKNOWN_FREEBSD_LINKER=gcc15 cargo build --release --workspace'"
+            echo "rpg did not link with cc, the rucc of the package, so gcc15 linked it." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: rpg fetch and rpg build
+        timeout-minutes: 90
+        run: |
+          bsd/scripts/freebsd/rr-vm.sh ssh "su -m pg -c 'cd /build/rpg && export HOME=/build RPG_CACHE=/build/rpg-cache &&
+            ./target/release/rpg fetch --pin $PIN --no-upstream-check &&
+            ./target/release/rpg build --pin $PIN --cc /usr/local/bin/rucc --level $LEVEL --system meson --config minimal --out /build/pg --jobs \$(sysctl -n hw.ncpu)'"
+      - name: rpg test --suite world
+        timeout-minutes: 180
+        run: |
+          set -o pipefail
+          bsd/scripts/freebsd/rr-vm.sh ssh "su -m pg -c 'cd /build/rpg && export HOME=/build PGCTLTIMEOUT=180 &&
+            ./target/release/rpg test --suite world --row F64 --out /build/pg'" | tee world.txt
+      - name: rpg triage
+        if: always()
+        run: bsd/scripts/freebsd/rr-vm.sh ssh "su -m pg -c 'cd /build/rpg && export HOME=/build && ./target/release/rpg triage --out /build/pg'" || true
+      - name: copy the run out
+        if: always()
+        run: |
+          mkdir -p pg
+          bsd/scripts/freebsd/rr-vm.sh ssh 'cd /build/pg && tar -cf - --ignore-failed-read results triage.md triage records.jsonl build.json build.log configure.log build/meson-logs/testlog.json 2>/dev/null' \
+            | tar -xf - -C pg || true
+          bsd/scripts/freebsd/rr-vm.sh down || true
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo
+            jq -r '"build: \(.phase)" + (if .["first-error"] then ", \(.["first-error"])" else "" end)' \
+              pg/build.json 2>/dev/null || echo "rpg build did not write build.json"
+            echo
+            grep '^world:' world.txt 2>/dev/null || echo "rpg test did not get as far as a count"
+            echo
+            echo "Everything that did not pass:"
+            echo
+            jq -r 'select(.outcome != "passed" and .outcome != "skipped") | "- \(.test) \(.outcome)"' \
+              pg/records.jsonl 2>/dev/null || true
+            echo
+            sed 's/^# Triage$/#### Triage/; s/^## /##### /' pg/triage.md 2>/dev/null | head -200 || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: keep the run
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rpg-world-F64-${{ env.PIN }}-meson${{ env.LEVEL }}
+          path: pg
+          if-no-files-found: ignore

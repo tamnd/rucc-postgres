@@ -181,7 +181,7 @@ pub struct Rows {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Row {
-    /// `L64`, `LA64`, `M64` or `W64`.
+    /// `L64`, `LA64`, `M64`, `W64` or `F64`.
     pub name: String,
     /// What it is, in words.
     pub description: String,
@@ -273,6 +273,7 @@ mod tests {
         );
         let rows = Rows::load(&root.join("rows.toml")).unwrap();
         assert_eq!(rows.get("L64").unwrap().reference, "gcc-16");
-        assert_eq!(rows.rows.len(), 4);
+        assert_eq!(rows.get("F64").unwrap().build_system, System::Meson);
+        assert_eq!(rows.rows.len(), 5);
     }
 }
