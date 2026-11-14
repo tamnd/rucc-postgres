@@ -1,0 +1,137 @@
+{
+  "date": "2026-11-14",
+  "pin": "REL_18_6",
+  "config": "minimal",
+  "system": "autoconf",
+  "level": "-O2",
+  "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "rucc": "rucc 0.30.11",
+  "host": "runnervm8axu0",
+  "clients": 4,
+  "scale": 100,
+  "seconds": 30,
+  "scale-factor": 1.0,
+  "ratios": [
+    {
+      "name": "pgbench select-only",
+      "times": 1.0530224616277197,
+      "noise": 0.012852558465306594
+    },
+    {
+      "name": "pgbench tpcb-like",
+      "times": 0.9931863740331143,
+      "noise": 0.07298440844582024
+    },
+    {
+      "name": "analytic pricing summary",
+      "times": 1.1039612753358972,
+      "noise": 0.013270754657433458
+    },
+    {
+      "name": "analytic cheapest supplier",
+      "times": 1.0661415123220008,
+      "noise": 0.05674190581629772
+    },
+    {
+      "name": "analytic shipping priority",
+      "times": 1.0253822717954768,
+      "noise": 0.039944786293417266
+    },
+    {
+      "name": "analytic order priority",
+      "times": 1.0201816543385713,
+      "noise": 0.015878188241074957
+    },
+    {
+      "name": "analytic local supplier volume",
+      "times": 1.0199677823143947,
+      "noise": 0.0127250311407128
+    },
+    {
+      "name": "analytic revenue change",
+      "times": 1.0752960175527575,
+      "noise": 0.028109559504643975
+    },
+    {
+      "name": "analytic volume shipping",
+      "times": 0.9995180542912807,
+      "noise": 0.04865954520032426
+    },
+    {
+      "name": "analytic market share",
+      "times": 0.9990806445038404,
+      "noise": 0.03923384320068267
+    },
+    {
+      "name": "analytic product type profit",
+      "times": 1.0817758539259223,
+      "noise": 0.03577210055229308
+    },
+    {
+      "name": "analytic returned items",
+      "times": 1.0956443168371903,
+      "noise": 0.02194383200232042
+    },
+    {
+      "name": "analytic important stock",
+      "times": 1.004239775829446,
+      "noise": 0.02033944412785653
+    },
+    {
+      "name": "analytic shipping modes",
+      "times": 1.139135868244569,
+      "noise": 0.023034286888745304
+    },
+    {
+      "name": "analytic customer distribution",
+      "times": 0.8808157573144402,
+      "noise": 0.10813102261578346
+    },
+    {
+      "name": "analytic promotion effect",
+      "times": 1.0172296547573767,
+      "noise": 0.032375706662906664
+    },
+    {
+      "name": "analytic top supplier",
+      "times": 1.039072901990834,
+      "noise": 0.04816478157470276
+    },
+    {
+      "name": "analytic parts and suppliers",
+      "times": 1.0620270643521845,
+      "noise": 0.022119978737599896
+    },
+    {
+      "name": "analytic small quantity orders",
+      "times": 0.9372800674291998,
+      "noise": 0.05215393400416819
+    },
+    {
+      "name": "analytic large volume customers",
+      "times": 1.0507161099787254,
+      "noise": 0.01850475571266411
+    },
+    {
+      "name": "analytic discounted revenue",
+      "times": 0.9797765017184961,
+      "noise": 0.2122860005554221
+    },
+    {
+      "name": "analytic late suppliers",
+      "times": 1.0861243653094752,
+      "noise": 0.01033563249142809
+    },
+    {
+      "name": "regression suite",
+      "times": 1.062318886130056,
+      "noise": 0.01990397688200107
+    },
+    {
+      "name": "analytic geometric mean",
+      "times": 1.032464736254314,
+      "noise": 0.0
+    }
+  ],
+  "missing": []
+}
