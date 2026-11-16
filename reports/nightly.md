@@ -21,37 +21,37 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | L64-REL_18_6-minimal-meson-O2-lld | 2026-11-16 | rucc 0.30.11 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | L64-REL_18_6-minimal-meson-O2-rpg-ar | 2026-11-16 | rucc 0.30.11 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | L64-REL_18_6-services-meson-O2 | 2026-11-16 | rucc 0.30.11 | 947 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-full-autoconf-O2 | 2026-11-02 | rucc 0.30.11 | 1023 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-full-meson-O2 | 2026-11-09 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-O0 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-O1 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-O2 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-O2-flto | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-O2-mold | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-O2-rpg-ar | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-autoconf-Os | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-meson-O0 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-meson-O2 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-meson-O2-flto | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-meson-O2-lld | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-minimal-meson-O2-rpg-ar | 2026-11-09 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| L64-REL_19_STABLE-services-meson-O2 | 2026-11-02 | rucc 0.30.11 | 1027 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-full-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 1037 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-full-meson-O2 | 2026-11-16 | rucc 0.30.11 | 1035 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-O0 | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-O1 | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-O2-flto | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-O2-mold | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-O2-rpg-ar | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-autoconf-Os | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-meson-O0 | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-meson-O2 | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-meson-O2-flto | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-meson-O2-lld | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-minimal-meson-O2-rpg-ar | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| L64-REL_19_STABLE-services-meson-O2 | 2026-11-16 | rucc 0.30.11 | 1041 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_18_6-full-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_18_6-minimal-autoconf-O0 | 2026-11-16 | rucc 0.30.11 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | LA64-REL_18_6-minimal-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| LA64-REL_19_STABLE-full-autoconf-O2 | 2026-11-09 | rucc 0.30.11 | 1024 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| LA64-REL_19_STABLE-minimal-autoconf-O0 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| LA64-REL_19_STABLE-minimal-autoconf-O2 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| LA64-REL_19_STABLE-full-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 1037 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| LA64-REL_19_STABLE-minimal-autoconf-O0 | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| LA64-REL_19_STABLE-minimal-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_18_6-full-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 944 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_18_6-minimal-autoconf-O0 | 2026-11-16 | rucc 0.30.11 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_18_6-minimal-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 913 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_18_6-minimal-meson-O0 | 2026-11-16 | rucc 0.30.11 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_18_6-minimal-meson-O2 | 2026-11-16 | rucc 0.30.11 | 911 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_19_STABLE-full-autoconf-O2 | 2026-11-02 | rucc 0.30.11 | 1023 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_19_STABLE-minimal-autoconf-O0 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_19_STABLE-full-autoconf-O2 | 2026-11-16 | rucc 0.30.11 | 1037 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_19_STABLE-minimal-autoconf-O0 | 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | M64-REL_19_STABLE-minimal-autoconf-O2 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_19_STABLE-minimal-meson-O0 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| M64-REL_19_STABLE-minimal-meson-O2 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_19_STABLE-minimal-meson-O0 | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| M64-REL_19_STABLE-minimal-meson-O2 | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | REL_19_STABLE-minimal-autoconf-O0 | 2026-09-29 | rucc 0.15.2 | 984 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-autoconf-O2 | 2026-09-29 | rucc 0.15.2 | 984 passed, 0 not, 0 skipped | first night |
 | REL_19_STABLE-minimal-meson-O0 | 2026-09-29 | rucc 0.15.2 | 982 passed, 0 not, 0 skipped | first night |
@@ -59,9 +59,9 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 | W64-REL_18_6-full-meson-O2 | 2026-11-16 | rucc 0.30.11 | 943 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | W64-REL_18_6-minimal-meson-O0 | 2026-11-16 | rucc 0.30.11 | 912 passed, 0 not, 0 skipped | 0 worse, 0 better |
 | W64-REL_18_6-minimal-meson-O2 | 2026-11-16 | rucc 0.30.11 | 912 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| W64-REL_19_STABLE-full-meson-O2 | 2026-11-09 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| W64-REL_19_STABLE-minimal-meson-O0 | 2026-11-09 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped | 0 worse, 0 better |
-| W64-REL_19_STABLE-minimal-meson-O2 | 2026-11-09 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| W64-REL_19_STABLE-full-meson-O2 | 2026-11-16 | rucc 0.30.11 | 1035 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| W64-REL_19_STABLE-minimal-meson-O0 | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
+| W64-REL_19_STABLE-minimal-meson-O2 | 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped | 0 worse, 0 better |
 
 ## History
 
@@ -594,6 +594,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1037 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 1023 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 1022 passed, 0 not, 0 skipped |
@@ -604,6 +605,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1035 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 1021 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 1020 passed, 0 not, 0 skipped |
@@ -615,6 +617,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 990 passed, 0 not, 0 skipped |
@@ -626,6 +629,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
@@ -637,6 +641,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
@@ -649,6 +654,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
@@ -660,6 +666,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
@@ -671,6 +678,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 990 passed, 0 not, 0 skipped |
@@ -680,6 +688,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 990 passed, 0 not, 0 skipped |
@@ -690,6 +699,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 988 passed, 0 not, 0 skipped |
@@ -701,6 +711,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 988 passed, 0 not, 0 skipped |
@@ -712,6 +723,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 988 passed, 0 not, 0 skipped |
@@ -722,6 +734,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 988 passed, 0 not, 0 skipped |
@@ -732,6 +745,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
@@ -742,6 +756,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1041 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 1027 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 1026 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 1026 passed, 0 not, 0 skipped |
@@ -856,6 +871,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1037 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 1024 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 1023 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped |
@@ -867,6 +883,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 990 passed, 0 not, 0 skipped |
@@ -877,6 +894,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 990 passed, 0 not, 0 skipped |
@@ -1063,6 +1081,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1037 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 1023 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 1022 passed, 0 not, 0 skipped |
@@ -1073,6 +1092,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1005 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 992 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 991 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
@@ -1094,6 +1114,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 988 passed, 0 not, 0 skipped |
@@ -1104,6 +1125,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
 | 2026-10-19 | rucc 0.30.1 | 988 passed, 0 not, 0 skipped |
@@ -1243,6 +1265,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1035 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 1022 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 1021 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 1020 passed, 0 not, 0 skipped |
@@ -1254,6 +1277,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
@@ -1265,6 +1289,7 @@ Written by `rpg nightly` after each night's world run. The night files it reads 
 
 | Date | Compiler | Tests |
 |---|---|---|
+| 2026-11-16 | rucc 0.30.11 | 1003 passed, 0 not, 0 skipped |
 | 2026-11-09 | rucc 0.30.11 | 990 passed, 0 not, 0 skipped |
 | 2026-11-02 | rucc 0.30.11 | 989 passed, 0 not, 0 skipped |
 | 2026-10-26 | rucc 0.30.11 | 988 passed, 0 not, 0 skipped |
